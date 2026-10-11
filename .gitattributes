@@ -1,0 +1,17 @@
+# Line endings that must not change, whatever the uploader's Git settings:
+# shell scripts run on the Apollo, macOS and Linux (LF); .bat/.ps1 run on Windows (CRLF).
+*.sh       text eol=lf
+*.command  text eol=lf
+*.py       text eol=lf
+*.html     text eol=lf
+*.json     text eol=lf
+*.svg      text eol=lf
+*.md       text eol=lf
+LICENSE    text eol=lf
+*.bat      text eol=crlf
+*.ps1      text eol=crlf
+*.png      binary
+*.ico      binary
+*.icns     binary
+*.zip      binary
+*.woff2 binary
