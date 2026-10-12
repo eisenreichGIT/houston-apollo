@@ -193,6 +193,23 @@
   .node-head .dot.online { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 18%, transparent); }
   .node-head b { font-size: 17px; text-transform: capitalize; }
   .node-head .sub { margin-left: auto; text-align: right; }
+  .logseg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .logseg::-webkit-scrollbar { display: none; }
+  .logseg { display: flex; width: 100%; }
+  .logseg button { white-space: nowrap; flex: 1 1 auto; padding: 7px 8px; }
+  @media (min-width: 700px) { .logseg { display: inline-flex; width: auto; } .logseg button { padding: 7px 14px; } }
+  .logtools { display: flex; align-items: center; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
+  .logtools .input { padding: 9px 12px; font-size: 15px; }
+  #logFilter { flex: 1 1 160px; width: auto; min-width: 0; }
+  #logLines { width: auto; flex: none; }
+  .livebox { display: inline-flex; align-items: center; gap: 8px; margin-left: auto; }
+  .logview { margin: 12px 0 12px; padding: 10px 12px; min-height: 180px; max-height: 62vh; overflow: auto; background: var(--bg2);
+    border: 1px solid var(--line); border-radius: 8px; font: 12px/1.55 var(--mono); color: var(--text); white-space: pre-wrap;
+    overflow-wrap: anywhere; tab-size: 4; }
+  .logview span { display: block; }
+  .logview .lw { color: var(--warn-text); }
+  .logview .le { color: var(--danger-text); }
+  .logview .lm { color: var(--muted); }
   .bar { height: 6px; border-radius: 99px; background: var(--card2); overflow: hidden; margin-top: 12px; }
   .bar i { display: block; height: 100%; width: 0; background: var(--text); border-radius: 99px; transition: width .4s; }
   .node-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
@@ -523,6 +540,11 @@
           <button class="big" id="stopBtn" type="button">
             <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>Stop</button>
         </div>
+        <button class="next hidden" id="updCard" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8 11l4-4 4 4"/></svg>
+          <span><span class="sub">Apollo software</span><b id="updCardText"></b></span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
         <button class="next hidden" id="nextCard" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
           <span><span class="sub" id="nextLabel">Next scheduled change</span><b id="nextText"></b></span>
@@ -626,10 +648,25 @@
 
   <!-- ======================= activity ======================= -->
   <section id="view-activity" class="view hidden" role="tabpanel" aria-label="Activity">
-    <div class="card">
+    <div class="filters">
+      <div class="seg" role="group" aria-label="Show" id="actSeg"><button type="button" data-pane="activity" aria-pressed="true">Activity</button><button type="button" data-pane="logs" aria-pressed="false">Logs</button></div>
+    </div>
+    <div class="card" id="actPane">
       <h2>Activity <span class="spacer"></span><button class="linkbtn" id="actRefresh" type="button">Refresh</button></h2>
       <ul class="act" id="actList"></ul>
       <div class="empty hidden" id="actEmpty">Nothing yet. Scheduled changes and the actions you take here show up in this list.</div>
+    </div>
+    <div class="card hidden" id="logPane">
+      <h2>System logs <span class="spacer"></span><span class="sub" id="logStamp" style="text-transform:none;letter-spacing:0"></span></h2>
+      <div class="seg logseg" role="group" aria-label="Which log" id="logSeg"><button type="button" data-log="MINER" aria-pressed="true">Miner</button><button type="button" data-log="NODE" aria-pressed="false">Node</button><button type="button" data-log="CKPOOL" aria-pressed="false" class="hidden" id="logSolo">Solo</button><button type="button" data-log="SYSLOG" aria-pressed="false">System</button><button type="button" data-log="HOUSTON" aria-pressed="false">Houston</button></div>
+      <div class="logtools">
+        <input class="input" id="logFilter" type="search" placeholder="Filter, e.g. error" aria-label="Show only lines containing" autocomplete="off" spellcheck="false">
+        <select class="input" id="logLines" aria-label="How many lines"><option value="100">100 lines</option><option value="300" selected>300 lines</option><option value="1000">1000 lines</option></select>
+        <span class="livebox"><span class="sub">Live</span><button class="switch" id="logLive" type="button" role="switch" aria-checked="false" aria-label="Refresh the log every 5 seconds"></button></span>
+      </div>
+      <pre class="logview" id="logView" tabindex="0" aria-label="Log lines, newest at the bottom"></pre>
+      <div class="btnrow"><button class="secondary small" type="button" id="logRefresh">Refresh</button><button class="secondary small" type="button" id="logCopy">Copy</button><button class="secondary small" type="button" id="logSave">Download</button></div>
+      <p class="note" id="logNote" style="margin-bottom:0">Newest lines at the bottom. Read from the Apollo through its own API; nothing leaves your network.</p>
     </div>
   </section>
 
@@ -768,7 +805,7 @@
           <div class="btnrow"><button class="primary small" type="button" id="saveRate">Save</button></div>
         </div>
         <div class="card"><h2>Alerts on your phone</h2>
-          <p class="note" style="margin-top:0">Houston tells you when your Apollo stops unexpectedly, runs hot, loses hashrate, its node stops or its drive fills up, and when your solo pool finds a block. Use either way below, or both.</p>
+          <p class="note" style="margin-top:0">Houston tells you when your Apollo stops unexpectedly, runs hot, loses hashrate, its node stops or its drive fills up, when your solo pool finds a block, and when new Apollo software is out. Use either way below, or both.</p>
           <div class="row-field"><span class="lbl">Send alerts</span><button class="switch" id="alertsSwitch" type="button" role="switch" aria-checked="false" aria-label="Alerts on or off"></button></div>
           <div class="channel">
             <div class="ch-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><b>Notifications on this device</b><span class="pill" id="pushState">Off</span></div>
@@ -793,6 +830,7 @@
             <label><input type="checkbox" data-a="node">Node stopped</label>
             <label><input type="checkbox" data-a="disk">Node drive almost full</label>
             <label><input type="checkbox" data-a="block">Solo block found</label>
+            <label><input type="checkbox" data-a="update">Apollo software update</label>
           </div>
           <div class="row-field"><label for="hotLimit">Hot above<span class="sub">Hashboard temperature</span></label>
             <input id="hotLimit" class="short" type="number" step="1"><span id="hotUnit" class="sub">°F</span></div>
@@ -800,6 +838,19 @@
         </div>
       </div>
       <div>
+        <div class="card" id="apolloCard"><h2>This Apollo</h2>
+          <div class="row-field"><span class="lbl">Apollo software<span class="sub" id="updSub">Checking…</span></span>
+            <button class="primary small hidden" type="button" id="updBtn">Update</button>
+          </div>
+          <div id="updProg" class="hidden" style="margin:-4px 0 14px">
+            <div class="bar" style="margin-top:0"><i id="updBar"></i></div>
+            <p class="note" id="updNote" style="margin:8px 0 0"></p>
+          </div>
+          <div class="btnrow" style="margin:-6px 0 14px"><button class="linkbtn" type="button" id="updCheck">Check for updates</button></div>
+          <div class="row-field" style="margin-bottom:0"><span class="lbl">Front status light<span class="sub">The light on the front of the Apollo. Changing it restarts a running miner.</span></span>
+            <button class="switch" id="ledSwitch" type="button" role="switch" aria-checked="true" aria-label="Front status light" disabled></button>
+          </div>
+        </div>
         <div class="card"><h2>Your Apollos</h2>
           <p class="note" style="margin-top:0">Add your other Apollos to see them all on the Home tab. If they run Houston too, you can jump straight to theirs.</p>
           <div id="peerRows"></div>

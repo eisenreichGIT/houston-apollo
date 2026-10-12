@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3.0 (2026-10-12)
+
+- **Apollo software updates from Houston**: Settings › This Apollo shows your Apollo software version and says *New version v2.x.x is available!* when FutureBit releases one; a card on Home says so too. *Update* runs FutureBit's own updater (the same one as the Update button on the Apollo dashboard) and shows its progress. Houston follows the update through the Apollo's restart, logs the result in Activity and tells you when it's done (or if it failed or got stuck). Alerts for stops and the unreachable Apollo stay quiet during the update.
+- New alert: **Apollo software update** available, once per new version (Settings › Alerts, on by default when alerts are on).
+- **Front status light**: Settings › This Apollo › *Front status light* turns the light on the front of the Apollo off or on. A running miner restarts to apply it (Houston asks first); the Bitcoin node isn't touched.
+- **System logs**: Activity › *Logs* shows the Apollo's Miner, Node, Solo pool (when solo mining) and System logs, plus Houston's own. 100, 300 or 1000 lines, filter as you type, live refresh every 5 seconds, copy and download. Errors and warnings are tinted. Logs come from the Apollo's own API and are shown as plain text.
+- Houston understands the Apollo API's "invalid request" replies better, so features that differ between Apollo software versions pick the right form.
+
 ## 2.2.1 (2026-10-11)
 
 - **Bitcoin network & market** on the Stats tab, after the Apollo's own stats: Fear & Greed Index, block height, time since the last block (live), average block time and the next difficulty change, market cap, BTC dominance, 24-hour trading volume, sats per dollar (or your currency), and the latest Bitcoin Magazine headlines.

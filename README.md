@@ -7,7 +7,10 @@
 - **Schedule**: e.g. quiet Eco around the clock, Turbo on weekdays while nobody's home. The Apollo runs it itself, so no computer has to stay on
 - **Stats**: 24-hour and 7-day charts, electricity cost (and what Turbo adds), solo-mining odds and best share, node and system health
 - **Bitcoin network & market**: Fear & Greed Index, block height and time since the last block, block time and difficulty, market cap, dominance, volume, sats per dollar, and the latest headlines
-- **Alerts** on your phone when the miner stops, runs hot, loses hashrate, its node stops or its drive fills up (and when your solo pool finds a block): as regular notifications from the Houston app, or through the free ntfy app
+- **Apollo software updates**: see when FutureBit releases a new version and install it from Houston, with progress
+- **System logs**: the Apollo's miner, node, solo pool and system logs, filterable and live
+- **Front status light**: turn the light on the front of the Apollo off (or on)
+- **Alerts** on your phone when the miner stops, runs hot, loses hashrate, its node stops or its drive fills up (and when your solo pool finds a block, or new Apollo software is out): as regular notifications from the Houston app, or through the free ntfy app
 - **Siri and shortcuts**: "Hey Siri, Apollo status". Google Home works through Home Assistant
 - **Several Apollos** in one place
 - **Light or dark**, or follow your phone or computer

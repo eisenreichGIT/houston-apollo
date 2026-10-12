@@ -4,11 +4,11 @@ This page is for anyone deciding whether to run Houston on their Apollo. It expl
 
 > Short version: Houston keeps everything on your Apollo and your own network. It has no account, no cloud service and no tracking. Passwords never leave your devices except to sign in to your own Apollo. The one thing it stores that you should protect is the Apollo sign-in it keeps so your schedule can run.
 
-Last full review: version 2.2.0 (October 2026). [Findings fixed in that review](#findings-fixed-in-the-220-review) are listed at the end. Version 2.2.1 adds the network, market and news cards; their sources and protections are covered below.
+Last full review: version 2.2.0 (October 2026). [Findings fixed in that review](#findings-fixed-in-the-220-review) are listed at the end. Version 2.2.1 adds the network, market and news cards; version 2.3.0 adds Apollo software updates, the front light switch and the log viewer. Their sources and protections are covered below.
 
 ## What you're trusting Houston with
 
-Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your dashboard password. Houston can therefore do anything the dashboard can: start and stop the miner and node, change modes and change settings. It never calls the dashboard's *format drive* action.
+Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your dashboard password. Houston can therefore do anything the dashboard can: start and stop the miner and node, change modes and settings (the front light is one), read the Apollo's logs, and start FutureBit's software update. It never calls the dashboard's *format drive* action, and it never downloads or installs software itself: *Update* asks the Apollo's API to run FutureBit's own updater, exactly like the dashboard's Update button.
 
 | Thing | Where it lives | Who can read it |
 |---|---|---|
@@ -18,7 +18,8 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | **Shortcut key** (optional) | `/var/lib/houston/settings.json`, mode 600 | Houston and root. Shown in the app to signed-in users |
 | **ntfy topic** (optional) | `settings.json`, mode 600 | Houston and root, plus anyone who knows or guesses the topic on ntfy.sh |
 | **Device notification keys** (optional) | `/var/lib/houston/push.json`, mode 600: Houston's signing key, plus each device's push address and encryption keys | Houston and root |
-| **History and activity** | `history.json`: one reading per minute for 7 days. `activity.json`: the last 60 events | Houston and root |
+| **History and activity** | `history.json`: one reading per minute for 7 days. `activity.json`: the last 60 events. `update.json` (mode 600): the versions and start time of an Apollo software update | Houston and root |
+| **Logs** | Not stored by Houston. The Apollo's logs are read from its API when you open Activity › Logs. Houston's own recent messages are kept in memory only (the last 500 lines) | Signed-in users of Houston. Logs can include your Apollo's network addresses and pool details, so share downloaded logs with care |
 | **Desktop setups** | Windows: password encrypted with DPAPI (only your Windows account can decrypt it). macOS: login Keychain. Linux: `~/.config/apollo-miner/password`, mode 600 | Your user account on that computer |
 
 `/var/lib/houston` is mode 700 and belongs to Houston's own throwaway system user. Other accounts on the Apollo can't read it; root can.
@@ -52,7 +53,7 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | `/`, app files, icons, fonts, `sw.js` | No | The web app (fixed list of files; nothing else on disk can be requested) |
 | `/api/device`, `/api/glance`, `/api/price`, `/api/market` | No | Model, version and time zone; live status readings; cached bitcoin price; cached network, market and news data (all public information) |
 | `/api/graphql` | The Apollo's own rules | Passes requests to the Apollo API unchanged, only when sent as JSON. Sign-in attempts are rate limited here |
-| `/api/schedule`, `/api/settings`, `/api/activity`, `/api/history`, `/api/fleet`, `/api/auth`, `/api/discover`, `/api/automation`, `/api/push`, `/api/alerts/test` | Yes: a valid Apollo sign-in, checked with the Apollo | Houston's own features |
+| `/api/schedule`, `/api/settings`, `/api/activity`, `/api/history`, `/api/fleet`, `/api/auth`, `/api/discover`, `/api/automation`, `/api/push`, `/api/alerts/test`, `/api/apollo-update` (version check; POST starts the update), `/api/houston-log` | Yes: a valid Apollo sign-in, checked with the Apollo | Houston's own features |
 | `/api/v1/say`, `/api/v1/status`, `/api/v1/action/<action>` | The shortcut key | Status, plus start / stop / modes / node start-stop only |
 
 **Outbound connections** (Houston's, never the browser's: the app's security policy blocks the browser from contacting anything except Houston)
@@ -62,13 +63,14 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | `127.0.0.1:5000` (the Apollo API) and `127.0.0.1:3000` (the Apollo's model info) | Always | Your requests and the stored sign-in |
 | `api.kraken.com`, `api.exchange.coinbase.com` | Once a minute, if the bitcoin price is on (Settings) | Nothing about you: public price requests |
 | `mempool.space`, `api.coingecko.com`, `api.alternative.me`, `bitcoinmagazine.com` | Every 5 to 60 minutes, if *Network, market & news* is on (Settings) | Nothing about you: public data requests (the currency you picked, for market cap and volume) |
+| `raw.githubusercontent.com` (FutureBit's dashboard repository) | Not Houston itself: when Houston asks for the latest version (every 6 hours, and when you check), the Apollo's own API looks it up there, as it does for the dashboard. *Update* makes FutureBit's updater download from FutureBit's GitHub | Nothing about you: a public file request |
 | `ntfy.sh` (or your server) | When an alert fires, if you set a topic | The alert title and message |
 | Apple / Google / Mozilla / Microsoft push services | When an alert fires, if a device has notifications on | The encrypted alert, a signed header and a time-to-live |
 | Your other Apollos (port 8088, or 5000 for status only) | When Home shows Your Apollos | A status request, no sign-in |
 | Your home network, ports 5000 and 8088 | Only when you press *Find on my network* | Small "are you an Apollo?" requests |
 | `tailscale.com` | Only during installation | The official Tailscale install script and packages |
 
-Houston has no telemetry, update check, analytics or account.
+Houston has no telemetry, analytics or account, and doesn't check for updates to itself.
 
 ## How the code is built
 
@@ -97,6 +99,7 @@ So: use a strong, unique dashboard password, don't port-forward the Apollo, and 
 - **ntfy topics work like passwords.** Anyone who knows yours can read your alerts and post fake ones. Use the random button, or device notifications instead.
 - **Push services see metadata**: that your device received a message, when, and roughly how big it was.
 - **Tailscale is installed with its official script** (`curl -fsSL https://tailscale.com/install.sh | sh`), the method Tailscale documents. Use `--no-tailscale` if you'd rather install it yourself.
+- **Apollo software updates are FutureBit's.** Houston starts FutureBit's updater but can't check what it installs; that trust is the same as for the dashboard's Update button. The update is never started on its own: only when a signed-in user presses *Update* and confirms.
 - **Home-screen action links** (an icon for `#turbo`, say) run without asking. That's the point of them, but treat such icons like a remote control.
 - **No independent audit.** This review was done by the authors: the code was written by Claude (Anthropic's AI) and tested on real hardware by @eisenreich. Outside reviews are welcome.
 

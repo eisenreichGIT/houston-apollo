@@ -13,6 +13,7 @@ Python 3 standard library only. Unofficial; not affiliated with FutureBit.
 """
 import datetime as dt
 import base64
+import collections
 import hashlib
 import hmac
 import json
@@ -25,7 +26,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 HERE = os.path.dirname(os.path.realpath(__file__))
 WEB_DIR = os.path.realpath(os.environ.get("HOUSTON_WEB", os.path.join(HERE, "web")))
 STATE_DIR = os.environ.get("STATE_DIRECTORY") or os.environ.get("HOUSTON_STATE") or os.path.join(HERE, "state")
@@ -55,8 +56,13 @@ TYPES = {".html": "text/html; charset=utf-8", ".json": "application/json", ".png
          ".woff2": "font/woff2", ".js": "text/javascript; charset=utf-8"}
 
 
+_LOG_RING = collections.deque(maxlen=500)     # recent lines, for Houston's own log in the app
+
+
 def log(msg):
-    print(time.strftime("%Y-%m-%d %H:%M:%S"), msg, flush=True)
+    line = time.strftime("%Y-%m-%d %H:%M:%S") + " " + str(msg)
+    _LOG_RING.append(line)
+    print(line, flush=True)
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -131,8 +137,17 @@ def apollo(query, variables=None, token=None, timeout=30):
     req = urllib.request.Request(API, data=body, method="POST", headers={"Content-Type": "application/json"})
     if token:
         req.add_header("Authorization", "Bearer " + token)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = json.loads(r.read().decode())
+    except urllib.error.HTTPError as he:
+        # Apollo's API answers a request it can't validate with HTTP 400 and the reason in the body
+        try:
+            data = json.loads(he.read().decode() or "{}")
+        except ValueError:
+            data = {}
+        if not data.get("errors"):
+            raise he
     if data.get("errors"):
         err = data["errors"][0]
         e = RuntimeError(err.get("message", "error"))
@@ -164,10 +179,12 @@ _features = {}
 def api_features():
     """What this Apollo software supports, found once by asking the API to validate two tiny requests:
     nodeMutation - node start/stop is a GraphQL mutation (2.1.4+; older software only has the query form)
-    nodeStorage  - the API reports whether there is a drive for the blockchain (2.1.4+)"""
+    nodeStorage  - the API reports whether there is a drive for the blockchain (2.1.4+)
+    mcuMutation  - the software update is started with a mutation (2.1.4+; a query before that)"""
     if _features:
         return _features
-    probes = {"nodeMutation": "mutation { Node { __typename } }", "nodeStorage": "query { Node { storage { __typename } } }"}
+    probes = {"nodeMutation": "mutation { Node { __typename } }", "nodeStorage": "query { Node { storage { __typename } } }",
+              "mcuMutation": "mutation { Mcu { __typename } }"}
     found = {}
     for name, q in probes.items():
         req = urllib.request.Request(API, data=json.dumps({"query": q}).encode(), method="POST",
@@ -183,7 +200,7 @@ def api_features():
             errs = json.loads(body.decode() or "{}").get("errors") or []
         except ValueError:
             return {}
-        found[name] = not any("Cannot query field" in (x.get("message") or "") for x in errs)
+        found[name] = not any(re.search(r"Cannot query field|not configured for mutations", x.get("message") or "") for x in errs)
     _features.update(found)
     return _features
 
@@ -481,7 +498,8 @@ def default_settings():
         "rate": None,                 # electricity price per kWh, e.g. 0.16
         "currency": "$",
         "alerts": {"enabled": False, "server": "https://ntfy.sh", "topic": "",
-                   "offline": True, "hot": True, "hotC": 80, "hashrate": True, "node": True, "disk": True, "block": True},
+                   "offline": True, "hot": True, "hotC": 80, "hashrate": True, "node": True, "disk": True, "block": True,
+                   "update": True},
         "apollos": [],                # other Apollos: [{"name": "Garage", "host": "192.168.1.51"}]
         "automation": {"key": None},  # key for Siri Shortcuts / HTTP Shortcuts (see /api/v1/...)
         "price": {"enabled": True, "fiat": "USD"},   # bitcoin price ticker
@@ -528,7 +546,7 @@ def validate_settings(new, current):
         a = new["alerts"]
         if not isinstance(a, dict):
             raise ValueError("alerts must be an object")
-        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block"):
+        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block", "update"):
             if k in a:
                 s["alerts"][k] = bool(a[k])
         if "server" in a:
@@ -1092,12 +1110,13 @@ def check_alerts(s, extra):
     a, units = st["alerts"], st["units"]
     last5 = recent(5)
     # Can't reach the Apollo's software at all (5 minutes)
-    unreachable = len(last5) >= 5 and all(x.get("s") == "unreachable" for x in last5)
+    upd = updating()            # an Apollo software update stops the miner and node and reboots: no alarms
+    unreachable = len(last5) >= 5 and all(x.get("s") == "unreachable" for x in last5) and not upd
     alert("unreachable", unreachable and a["offline"], "Houston can't reach your Apollo",
           "The Apollo's software hasn't answered for 5 minutes. It may be updating, restarting, or stuck.", "warning", "high")
     # Miner stopped without anyone stopping it (3 minutes)
     last3 = recent(3)
-    stopped = (len(last3) >= 3 and all(x.get("s") in ("offline", "error") for x in last3) and not is_quiet("miner")
+    stopped = (len(last3) >= 3 and all(x.get("s") in ("offline", "error") for x in last3) and not is_quiet("miner") and not upd
                and any(x.get("s") == "online" for x in recent(60)))
     alert("offline", stopped and a["offline"], "Your Apollo stopped mining",
           "The miner has been offline for 3 minutes, and it wasn't stopped from Houston or the schedule. (If you stopped it on the Apollo dashboard, ignore this.)", "warning", "high")
@@ -1110,7 +1129,7 @@ def check_alerts(s, extra):
     # Hashrate drop: last 10 minutes well below the previous 2 hours in the same mode
     drop = False
     win = recent(130)
-    if len(win) >= 60 and not is_quiet("miner"):
+    if len(win) >= 60 and not is_quiet("miner") and not upd:
         cur, prev = win[-10:], win[:-15]
         mode = s.get("m")
         cur_h = [x["h"] for x in cur if x.get("h") and x.get("m") == mode]
@@ -1123,7 +1142,7 @@ def check_alerts(s, extra):
           "chart_with_downwards_trend")
     # Node stopped without anyone stopping it (5 minutes)
     nodes = recent(5, "n")
-    node_down = len(nodes) >= 5 and all(x == "offline" for x in nodes) and not is_quiet("node") \
+    node_down = len(nodes) >= 5 and all(x == "offline" for x in nodes) and not is_quiet("node") and not upd \
         and any(x.get("n") == "online" for x in recent(120))
     alert("node", node_down and a["node"], "Your Bitcoin node stopped",
           "The Apollo's Bitcoin node has been offline for 5 minutes.", "warning")
@@ -1522,6 +1541,216 @@ def market_view():
 # --------------------------------------------------------------------------- automation API (Siri Shortcuts etc.)
 _auto_fail = []
 
+# --------------------------------------------------------------------------- Apollo software updates
+# FutureBit's own update: Houston only asks the Apollo's API to run it (Mcu.update) and follows its
+# progress (Mcu.updateProgress), exactly like the Apollo dashboard does. It downloads the new
+# dashboard and API, rebuilds them and reboots the Apollo. Houston itself isn't touched by it.
+APOLLO_DIR = os.environ.get("HOUSTON_APOLLO_DIR", "/opt/apolloapi")
+UPDATE_FILE = os.path.join(STATE_DIR, "update.json")
+UPDATE_EVERY = float(os.environ.get("HOUSTON_UPDATE_EVERY", str(6 * 3600)))   # how often to look for a new version
+UPDATE_WINDOW = float(os.environ.get("HOUSTON_UPDATE_WINDOW", str(90 * 60)))  # after this, an update counts as stuck
+VER_RE = re.compile(r"^v?(\d{1,4})\.(\d{1,4})\.(\d{1,4})")
+_upd = {"latest": None, "checked": 0.0}
+
+
+def vtuple(v):
+    m = VER_RE.match(str(v or "").strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def installed_version():
+    """The Apollo software version on this Apollo (the dashboard's own package.json, like the dashboard uses)."""
+    for rel in ("apolloui-v2/package.json", "package.json"):
+        pk = read_json(os.path.join(APOLLO_DIR, rel), {})
+        v = pk.get("version") if isinstance(pk, dict) else None
+        if vtuple(v):
+            return str(v).lstrip("v")
+    return None
+
+
+def latest_version(token, force=False):
+    """The newest Apollo software, as the Apollo's API reports it (it asks FutureBit's GitHub)."""
+    if not force and _upd["latest"] and time.time() - _upd["checked"] < 3600:
+        return _upd["latest"]
+    d = apollo("query { Mcu { version { result error { message } } } }", token=token, timeout=20)
+    v = d["Mcu"]["version"]
+    if v.get("error"):
+        raise RuntimeError(v["error"].get("message") or "version check failed")
+    if not vtuple(v.get("result")):
+        raise RuntimeError("the Apollo didn't report a version")
+    _upd.update(latest=str(v["result"]).lstrip("v"), checked=time.time())
+    return _upd["latest"]
+
+
+def update_progress(token):
+    """0 = no update running, 10..100 while it runs, below 0 = it failed."""
+    d = apollo("query { Mcu { updateProgress { result { value } error { message } } } }", token=token, timeout=10)
+    r = d["Mcu"]["updateProgress"]
+    if r.get("error"):
+        raise RuntimeError(r["error"].get("message") or "progress unavailable")
+    try:
+        return int((r.get("result") or {}).get("value") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def newer(a, b):
+    ta, tb = vtuple(a), vtuple(b)
+    return bool(ta and tb and ta > tb)
+
+
+def update_run():
+    return read_json(UPDATE_FILE, {}).get("run")
+
+
+def updating():
+    r = update_run()
+    return bool(r and time.time() - r.get("t", 0) < UPDATE_WINDOW)
+
+
+def start_update(token):
+    with LOCK:
+        if updating():
+            raise ValueError("An update is already running.")
+        inst = installed_version()
+        latest = latest_version(token, force=True)
+        if inst and not newer(latest, inst):
+            raise ValueError("Already up to date (v%s)." % inst)
+        try:
+            if update_progress(token) > 0:
+                raise ValueError("An update is already running (started from the Apollo dashboard?).")
+        except RuntimeError:
+            pass
+        q = "{ Mcu { update { error { message } } } }"
+        use_mutation = api_features().get("mcuMutation", True)
+        try:
+            d = apollo(("mutation " if use_mutation else "query ") + q, token=token, timeout=60)
+        except RuntimeError as e:
+            # only a request the API refused to read (so nothing ran) is retried in the older form
+            if not (use_mutation and re.search(r'Cannot query field|not configured for mutations', str(e))):
+                raise
+            d = apollo("query " + q, token=token, timeout=60)
+        err = d["Mcu"]["update"]["error"]
+        if err:
+            raise RuntimeError(err.get("message") or "the Apollo didn't start the update")
+        data = read_json(UPDATE_FILE, {})
+        data["run"] = {"t": time.time(), "from": inst, "to": latest}
+        write_json(UPDATE_FILE, data, private=True)
+    quiet("miner", UPDATE_WINDOW / 60)
+    quiet("node", UPDATE_WINDOW / 60)
+    msg = "Apollo software update started" + (" (v%s to v%s)" % (inst, latest) if inst else " (to v%s)" % latest)
+    add_activity("update", True, msg, source="app")
+    log(msg)
+    return msg
+
+
+def finish_update(ok, message):
+    with LOCK:
+        data = read_json(UPDATE_FILE, {})
+        if not data.pop("run", None):
+            return                          # already reported
+
+        write_json(UPDATE_FILE, data, private=True)
+    _upd["checked"] = 0
+    add_activity("update", ok, message, source="houston")
+    log(message)
+    s = get_settings()
+    if s["alerts"]["enabled"] and s["alerts"].get("update", True) and alert_channels(s):
+        try:
+            notify("Apollo software updated" if ok else "Apollo software update didn't finish", message,
+                   "white_check_mark" if ok else "warning", "default" if ok else "high", s, tag="update")
+        except Exception as e:
+            log("update note not sent: %s" % e)
+
+
+_UPD_LOCK = threading.Lock()
+
+
+def update_watch(token=None):
+    """Follows an update Houston started (through the reboot), and now and then looks for a new version."""
+    with _UPD_LOCK:
+        _update_watch(token or stored_token())
+
+
+def _update_watch(token):
+    data = read_json(UPDATE_FILE, {})
+    run = data.get("run")
+    if run:
+        try:
+            p = update_progress(token)
+        except Exception:
+            p = None                        # the API is down: rebuilding or rebooting
+        inst = installed_version()
+        if p is None or p > 0:
+            if not run.get("seen"):
+                run["seen"] = True
+                with LOCK:
+                    d2 = read_json(UPDATE_FILE, {})
+                    if d2.get("run"):
+                        d2["run"]["seen"] = True
+                        write_json(UPDATE_FILE, d2, private=True)
+        if p is not None and p < 0:
+            finish_update(False, "The Apollo software update failed. The System log (Houston › Activity › Logs) may say why; you can try again.")
+        elif p == 0 and (run.get("seen") or newer(inst, run.get("from"))) and time.time() - run.get("t", 0) > 20:
+            finish_update(True, "Apollo software updated to v%s" % inst if newer(inst, run.get("from"))
+                          else "Apollo software update finished" + (" (v%s)" % inst if inst else ""))
+        elif time.time() - run.get("t", 0) > UPDATE_WINDOW:
+            finish_update(False, "The Apollo software update hasn't finished after %d minutes. Check the Apollo dashboard."
+                          % (UPDATE_WINDOW // 60))
+        return
+    if not token or time.time() - data.get("checked", 0) < UPDATE_EVERY:
+        return
+    latest = latest_version(token, force=True)
+    data["checked"] = time.time()
+    inst = installed_version()
+    s = get_settings()
+    if newer(latest, inst) and data.get("notified") != latest:
+        data["notified"] = latest
+        if s["alerts"]["enabled"] and s["alerts"].get("update", True) and alert_channels(s):
+            title = "Apollo software v%s is available" % latest
+            try:
+                notify(title, "You have v%s. Update from Houston: Settings › Your Apollo." % inst, "arrow_up", "low", s, tag="update")
+                add_activity("alert", True, title, source="alert")
+            except Exception as e:
+                log("update note not sent: %s" % e)
+    with LOCK:
+        cur = read_json(UPDATE_FILE, {})
+        cur.update({"checked": data["checked"], "notified": data.get("notified")})
+        write_json(UPDATE_FILE, cur, private=True)
+
+
+def update_loop():
+    time.sleep(20)
+    while True:
+        try:
+            update_watch()
+        except Exception as e:
+            log("update check: %s" % e)
+        time.sleep(15 if update_run() else 60)
+
+
+def update_view(token, check=False):
+    if update_run():
+        try:
+            update_watch(token)             # notice a finished update right away
+        except Exception as e:
+            log("update check: %s" % e)
+    out = {"installed": installed_version(), "latest": None, "available": False, "running": updating(),
+           "progress": None, "run": update_run(), "error": None}
+    try:
+        out["latest"] = latest_version(token, force=check)
+    except Exception as e:
+        out["error"] = "Couldn't check for updates: %s" % str(e)[:150]
+    out["available"] = newer(out["latest"], out["installed"])
+    try:
+        out["progress"] = update_progress(token)
+    except Exception:
+        out["progress"] = None              # the API isn't answering (expected while it rebuilds and reboots)
+    if out["progress"] and out["progress"] > 0:
+        out["running"] = True
+    return out
+
+
 
 def automation_ok(key):
     """True if `key` matches the automation key. Slows down and locks out repeated wrong keys."""
@@ -1673,6 +1902,9 @@ def note_app_action(body, response):
         return
     if MODE_RE.search(q):
         v = req.get("variables") or {}
+        if isinstance(v.get("led"), bool):            # the front status light (powerLedOff)
+            add_activity("light", True, "Front status light turned " + ("off" if v["led"] else "on"), source="app")
+            return
         mode = v.get("m") or v.get("mode") or v.get("minerMode")
         if mode == "custom" and v.get("h"):
             mode = "custom:%s" % v["h"]
@@ -1791,7 +2023,7 @@ class Handler(BaseHTTPRequestHandler):
             g["text"] = status_sentence()
             return self._send(200, g)
         if path not in ("/api/schedule", "/api/activity", "/api/settings", "/api/history", "/api/fleet", "/api/automation",
-                        "/api/push"):
+                        "/api/push", "/api/apollo-update", "/api/houston-log"):
             return self._send(404, {"error": "not found"})
         if not self._require_auth():
             return
@@ -1813,6 +2045,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"key": get_settings()["automation"].get("key")})
         if path == "/api/push":
             return self._send(200, push_view())
+        if path == "/api/apollo-update":
+            return self._send(200, update_view(self._token(), self._query().get("check") == "1"))
+        if path == "/api/houston-log":
+            return self._send(200, {"content": "\n".join(_LOG_RING), "timestamp": dt.datetime.now().astimezone().isoformat(timespec="seconds")})
         return self._send(404, {"error": "not found"})
 
     def do_PUT(self):
@@ -1892,9 +2128,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, automation_action(path[len("/api/v1/action/"):]), "text/plain; charset=utf-8")
             except (ValueError, RuntimeError) as e:
                 return self._send(400, str(e), "text/plain; charset=utf-8")
-        if path in ("/api/alerts/test", "/api/discover", "/api/automation", "/api/push"):
+        if path in ("/api/alerts/test", "/api/discover", "/api/automation", "/api/push", "/api/apollo-update"):
             if not self._require_auth():
                 return
+            if path == "/api/apollo-update":
+                try:
+                    with LOCK:
+                        save_token(self._token())
+                    msg = start_update(self._token())
+                except ValueError as e:
+                    return self._send(409, {"error": str(e)})
+                except Exception as e:
+                    return self._send(502, {"error": "The Apollo didn't start the update: %s" % str(e)[:200]})
+                return self._send(200, {"ok": True, "message": msg, "update": update_view(self._token())})
             if path == "/api/push":
                 try:
                     b = self._json_body()
@@ -1982,6 +2228,8 @@ def main():
         threading.Thread(target=price_loop, daemon=True).start()
     if MARKET_EVERY > 0:
         threading.Thread(target=market_loop, daemon=True).start()
+    if UPDATE_EVERY > 0:
+        threading.Thread(target=update_loop, daemon=True).start()
 
     def stop(*_):
         save_history()          # keep the charts across restarts

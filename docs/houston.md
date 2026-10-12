@@ -53,7 +53,7 @@ Sign in with your dashboard password. At home with Tailscale off, use the home a
 
 ## The tabs
 
-**Home**: the **bitcoin price** up top (24-hour change, low and high, sparkline; tap it for the chart), miner status with hashrate, power and hashboard temperature, plus efficiency (W/TH), fan speed, shares, uptime and pool. Start and Stop, the power modes (Apollo III: also Super Eco and a custom 5-20 TH/s target), the Bitcoin node card (sync, block height, peers, disk, Start/Stop), the next scheduled change, and **Your Apollos** if you added others.
+**Home**: the **bitcoin price** up top (24-hour change, low and high, sparkline; tap it for the chart), miner status with hashrate, power and hashboard temperature, plus efficiency (W/TH), fan speed, shares, uptime and pool. Start and Stop, the power modes (Apollo III: also Super Eco and a custom 5-20 TH/s target), the Bitcoin node card (sync, block height, peers, disk, Start/Stop), the next scheduled change, **Your Apollos** if you added others, and a card when new Apollo software is available.
 
 **Stats**: 24-hour and 7-day charts of the bitcoin price, hashrate (with a strip showing which mode was active), power and temperature (hover or tap for exact values; each chart also has a table view). Tiles for average hashrate, mining time, energy per day and electricity cost per month. **Energy by mode**, including how much the faster modes add compared with your normal mode. **Solo mining** (when you mine to the Apollo's own solo pool): best share, chance of a block today, expected time to a block. **Bitcoin node**: last block, network hashrate, difficulty, connections, version and the 10 most recent blocks with the pool that found them. **System**: CPU, memory, system and node drives, system temperature. Then **Bitcoin network & market**: the Fear & Greed Index, block height, time since the last block, average block time and the next difficulty change, market cap, BTC dominance, 24-hour volume, sats per dollar (or your currency) and the latest Bitcoin Magazine headlines.
 
@@ -65,9 +65,12 @@ Sign in with your dashboard password. At home with Tailscale off, use the home a
 
 Times use the time zone shown under *Coming up* (your phone's or computer's when you first save; Houston offers to switch if they differ). After saving, Houston offers to apply what the schedule says right now. A mode change restarts a running miner (about a minute) and never starts a stopped one. If the Apollo was off at a scheduled time, Houston still runs it up to 3 minutes late (after a restart, say), but not later.
 
-**Activity**: what happened and who did it: *Schedule*, *You* (from Houston), *Shortcut* (Siri etc.) or *Alert*.
+**Activity**: what happened and who did it: *Schedule*, *You* (from Houston), *Shortcut* (Siri etc.), *Alert* or *Houston* (e.g. an Apollo software update finishing).
+
+**Activity › Logs**: the Apollo's own logs, read through its API: **Miner**, **Node**, **Solo** (when you solo mine), **System** (the Apollo's syslog) and **Houston** (Houston's recent messages). Pick 100, 300 or 1000 lines, type to filter (e.g. `error`), turn on **Live** to refresh every 5 seconds, and copy or download what you see. Errors are tinted red, warnings amber. Bookmark `http://<apollo>:8088/#logs` to open straight to them.
 
 **Settings**:
+- **This Apollo**: the Apollo software version, with *Update* when FutureBit has a new one (see [Updating the Apollo software](#updating-the-apollo-software)), and the **Front status light** switch. Changing the light restarts a running miner (about a minute; Houston asks first). A stopped miner stays stopped and uses the setting when it starts.
 - **Appearance**: Light, Dark (default) or System, which follows your phone or computer. Saved on each device separately; the sun/moon button in the top bar switches between light and dark.
 - **Temperature**: °F or °C (°F by default).
 - **Bitcoin price**: on or off, and the currency (USD, EUR, GBP, CAD, AUD, JPY, CHF). Houston fetches it once a minute from Kraken's public API (Coinbase as a backup for USD, EUR and GBP), so the app itself never contacts outside sites. When your electricity currency matches, the cost tile also shows the cost in sats.
@@ -89,6 +92,7 @@ Houston tells you when:
 | Node stopped | The Bitcoin node has been offline for 5 minutes and wasn't stopped on purpose |
 | Node drive almost full | The blockchain drive is 95% full |
 | Solo block found | Your solo pool reports a block |
+| Apollo software update | FutureBit released a new Apollo software version (once per version; Houston checks every 6 hours). Also when an update you started from Houston finishes, fails or gets stuck |
 
 You also get an *all clear* when a problem goes away. A continuing problem is repeated every 6 hours.
 
@@ -132,6 +136,16 @@ Houston uses **[ntfy](https://ntfy.sh)**, a free push-notification app (Android,
 
 Install Houston on each Apollo (same two commands, with that Apollo's address). Then add the others in Settings › *Your Apollos* on any of them: Home shows all of them, with a link to each one's Houston. An Apollo without Houston still shows its status (read from its own API) with a link to its dashboard.
 
+## Updating the Apollo software
+
+When FutureBit releases a new version, Houston says *New version v2.x.x is available!* on Home and in Settings › This Apollo. **Update** runs FutureBit's own updater, the same one as the Update button on the Apollo dashboard; Houston only starts it and follows along:
+
+1. It takes about 10 to 20 minutes. Mining and the Bitcoin node pause while it downloads and rebuilds the Apollo software, then **the Apollo restarts by itself**. Keep it powered on.
+2. Houston shows the progress. During the restart Houston is briefly gone too (it runs on the Apollo) and reconnects by itself. You can also close the app; Houston keeps track.
+3. When the Apollo is back, Activity says *Apollo software updated to v2.x.x* and, if alerts are on, you get a notification. If the updater reports a failure, or nothing finishes within 90 minutes, Houston says so; look at Activity › Logs › System, and try again.
+
+Houston's alerts for a stopped miner or node, and for an unreachable Apollo, stay quiet during the update. The update doesn't change Houston itself. If the Apollo dashboard shows *Failed to fetch* afterwards, see [troubleshooting](troubleshooting.md).
+
 ## Updating Houston
 
 Copy the new `houston` folder over and run the installer again. Your schedule, history and settings are kept:
@@ -168,6 +182,7 @@ In `/var/lib/houston` (readable only by Houston's own service account):
 | `history.json` | one reading per minute for 7 days |
 | `push.json` | Houston's notification key and the devices you turned notifications on for (their browser push addresses) |
 | `activity.json` | the last 60 events |
+| `update.json` | the Apollo software update Houston started (versions and start time, until it finishes) and the last version it told you about |
 
 To revoke everything, see [SECURITY.md](../SECURITY.md#lost-phone).
 

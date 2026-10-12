@@ -26,6 +26,8 @@
     saved: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
     fail: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 7v6M12 17h.01"/><circle cx="12" cy="12" r="9.5"/></svg>',
     node: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>',
+    update: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8 11l4-4 4 4"/></svg>',
+    light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2.2h5c.1-1 .5-1.7 1.1-2.2A6 6 0 0 0 12 3z"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>'
   };
   const MODE_INFO = {
@@ -211,11 +213,11 @@
     document.querySelectorAll('.tab').forEach(b => b.setAttribute('aria-selected', String(b.dataset.tab === id)));
     for (const [t] of TABS) $('view-' + t).classList.toggle('hidden', t !== id);
     window.scrollTo(0, 0);
-    clearInterval(statsTimer); clearInterval(fleetTimer);
+    clearInterval(statsTimer); clearInterval(fleetTimer); clearInterval(logTimer);
     if (id === 'control') { refresh(true); loadFleet(); fleetTimer = setInterval(() => { if (!document.hidden) loadFleet(); }, 30000); }
     if (id === 'stats') { loadStats(); statsTimer = setInterval(() => { if (!document.hidden) loadStats(true); }, 60000); }
     if (id === 'schedule') loadSchedule();
-    if (id === 'activity') loadActivity();
+    if (id === 'activity') { if (opts && opts.pane) actPane = opts.pane; showPane(); }
     if (id === 'settings') renderSettings();
   }
 
@@ -225,7 +227,7 @@
     for (const [t] of TABS) $('view-' + t).classList.add('hidden');
     ['tabsTop', 'tabbar', 'logoutBtn'].forEach(i => $(i).classList.add('hidden'));
     $('login').classList.remove('hidden'); $('pw').value = ''; $('pw').focus();
-    clearInterval(timer); clearInterval(statsTimer); clearInterval(fleetTimer); clearInterval(priceTimer); price = null; renderPrice(); schedLoaded = false; saved = draft = null; node.available = null; settings = null;
+    clearInterval(timer); clearInterval(statsTimer); clearInterval(fleetTimer); clearInterval(priceTimer); clearInterval(logTimer); clearTimeout(updTimer); upd = null; price = null; renderPrice(); schedLoaded = false; saved = draft = null; node.available = null; settings = null;
   }
 
   async function showApp(first) {
@@ -241,7 +243,7 @@
         : act === 'node_stop' ? 'Stop the Bitcoin node' : act.startsWith('custom:') ? 'Set a custom target of ' + act.slice(7) + ' TH/s' : 'Switch to ' + modeName(act);
       if (!(await ask(what + '?', 'This link asks Houston to do that. Only continue if you opened it yourself.', 'Continue'))) act = null;
     }
-    go(pendingTab || 'control', { force: true }); pendingTab = null;
+    go(pendingTab === 'logs' ? 'activity' : pendingTab || 'control', { force: true, pane: pendingTab === 'logs' ? 'logs' : null }); pendingTab = null;
     if (act === 'start' || act === 'stop') action(act);
     else if (act === 'node_start' || act === 'node_stop') nodeAction(act.slice(5));
     else if (act && MODE_INFO[act]) setMode(act);
@@ -249,6 +251,7 @@
     clearInterval(timer);
     timer = setInterval(() => { if (!document.hidden && !busy && view === 'control') refresh(true); }, 10000);
     loadSchedule(true);   // for the "next change" card
+    loadUpdate(false);    // for the "new Apollo software" card
     loadPrice(); clearInterval(priceTimer);
     priceTimer = setInterval(() => { if (!document.hidden) loadPrice(); }, 60000);
   }
@@ -416,6 +419,7 @@
       if (!node.busy) node.status = st;
       const set = d.Settings.read.result && d.Settings.read.result.settings;
       node.solo = !!(set && set.nodeEnableSoloMining);
+      $('logSolo').classList.toggle('hidden', !node.solo);
       const s = d.Node.stats.result && d.Node.stats.result.stats;
       const bi = s && s.blockchainInfo;
       const live = st === 'online' && bi;
@@ -813,6 +817,8 @@
     if (a === 'schedule') return 'Schedule';
     if (a === 'alert') return 'Alert sent';
     if (a === 'automation') return 'Shortcut key';
+    if (a === 'update') return 'Apollo software';
+    if (a === 'light') return 'Front status light';
     if (a.indexOf('start@') === 0) return 'Start mining in ' + modeName(a.slice(6));
     return modeName(a) + ' mode';
   }
@@ -823,8 +829,8 @@
       $('actEmpty').classList.toggle('hidden', items.length > 0);
       for (const it of items) {
         const a = String(it.action || '');
-        const kind = !it.ok ? 'fail' : a === 'alert' ? 'alert' : a === 'schedule' || a === 'automation' ? 'saved' : a.indexOf('node_') === 0 ? 'node' : a === 'stop' ? 'stop' : a.indexOf('start') === 0 ? 'start' : a === 'restart' ? 'restart' : 'mode';
-        const cls = { fail: 'b-stop', saved: 'b-info', stop: 'b-stop', start: 'b-start', restart: 'b-info', mode: 'b-mode', node: 'b-info', alert: 'b-mode' }[kind];
+        const kind = !it.ok ? 'fail' : a === 'alert' ? 'alert' : a === 'update' ? 'update' : a === 'light' ? 'light' : a === 'schedule' || a === 'automation' ? 'saved' : a.indexOf('node_') === 0 ? 'node' : a === 'stop' ? 'stop' : a.indexOf('start') === 0 ? 'start' : a === 'restart' ? 'restart' : 'mode';
+        const cls = { fail: 'b-stop', saved: 'b-info', stop: 'b-stop', start: 'b-start', restart: 'b-info', mode: 'b-mode', node: 'b-info', alert: 'b-mode', update: 'b-info', light: 'b-info' }[kind];
         const icon = kind === 'mode' ? modeIcon(a) : ICON[kind];
         const d = new Date(it.time);
         const valid = !isNaN(d);
@@ -834,7 +840,7 @@
           el('span', { class: 'meta' },
             valid ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '', el('br'),
             valid ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : '', el('br'),
-            el('span', { class: 'src' }, { app: 'You', alert: 'Alert', shortcut: 'Shortcut' }[it.source] || 'Schedule'))));
+            el('span', { class: 'src' }, { app: 'You', alert: 'Alert', shortcut: 'Shortcut', houston: 'Houston' }[it.source] || 'Schedule'))));
       }
     } catch (e) {
       if (handleAuthError(e)) return;
@@ -842,6 +848,227 @@
     }
   }
   $('actRefresh').addEventListener('click', loadActivity);
+
+  // ---------------------------------------------------------------- Apollo software update
+  // FutureBit's own updater does the work (the same one the Apollo dashboard runs); Houston starts
+  // it and follows along. Houston runs on the Apollo too, so it goes away while the Apollo reboots.
+  let upd = null, updTimer = null, updWasRunning = false, updLost = 0;
+  async function loadUpdate(check) {
+    clearTimeout(updTimer);
+    try {
+      const u = await rest('GET', 'api/apollo-update' + (check ? '?check=1' : ''));
+      if (updWasRunning && !u.running) {
+        if (u.progress != null && u.progress < 0) toast('The Apollo software update failed. See Activity for details; you can try again.', 'err', 12000);
+        else toast('Apollo software ' + (u.installed ? 'v' + u.installed + ' ' : '') + 'is installed. Welcome back!', 'ok', 9000);
+        if (view === 'control') refresh(true);
+      }
+      upd = u; updLost = 0; updWasRunning = !!u.running;
+      if (check) toast(u.error ? u.error : u.available ? 'New version v' + u.latest + ' is available!' : 'Your Apollo software is up to date.', u.error ? 'err' : u.available ? '' : 'ok');
+    } catch (e) {
+      if (handleAuthError(e)) return;
+      if (updWasRunning) updLost++;            // expected: the Apollo is rebuilding or restarting
+      else if (check) toast(e.message, 'err');
+    }
+    renderUpdate();
+    if (updWasRunning) updTimer = setTimeout(() => loadUpdate(false), 5000);
+  }
+
+  function renderUpdate() {
+    const u = upd, sub = $('updSub'), btn = $('updBtn');
+    const running = updWasRunning;
+    let text = 'Checking…';
+    if (running && updLost) text = 'Restarting… Houston reconnects when the Apollo is back.';
+    else if (running) text = 'Updating' + (u && u.run && u.run.to ? ' to v' + u.run.to : '') + '… ' + (u && u.progress > 0 ? u.progress + '%' : 'starting');
+    else if (u) {
+      const have = u.installed ? 'v' + u.installed : 'Installed version unknown';
+      text = !u.installed && u.latest ? 'Latest version: v' + u.latest + ' (Houston can\'t read which one is installed)'
+        : u.available ? have + ' · New version v' + u.latest + ' is available!'
+        : u.latest && u.installed ? have + ' · Up to date'
+        : u.error ? have + ' · Couldn\'t check for updates' : have;
+      if (u.progress != null && u.progress < 0) text += ' · Last update failed';
+    }
+    sub.textContent = text;
+    const canRun = u && (u.available || (u.latest && !u.installed));
+    btn.classList.toggle('hidden', !canRun || running);
+    btn.textContent = u && u.available ? 'Update to v' + u.latest : 'Update';
+    $('updCheck').classList.toggle('hidden', running);
+    $('updProg').classList.toggle('hidden', !running);
+    $('updBar').style.width = running ? (updLost ? 100 : Math.max(5, (u && u.progress) || 5)) + '%' : '0';
+    $('updNote').textContent = updLost
+      ? 'The Apollo is restarting to finish the update. This page reconnects by itself; keep the Apollo powered on.'
+      : 'Mining and the node are paused while FutureBit\'s updater runs (about 10–20 minutes), then the Apollo restarts by itself. Keep it powered on.';
+    const card = $('updCard');
+    card.classList.toggle('hidden', !(u && (u.available || running)));
+    $('updCardText').textContent = running ? (updLost ? 'Apollo is restarting to finish the update…' : 'Updating Apollo software… ' + (u && u.progress > 0 ? u.progress + '%' : ''))
+      : u && u.available ? 'New version v' + u.latest + ' is available!' : '';
+  }
+
+  $('updCheck').addEventListener('click', () => { $('updSub').textContent = 'Checking…'; loadUpdate(true); });
+  $('updCard').addEventListener('click', async () => { await go('settings'); $('apolloCard').scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+  $('updBtn').addEventListener('click', async () => {
+    if (!upd || !(upd.available || (upd.latest && !upd.installed))) return;
+    const ok = await ask('Update Apollo software to v' + upd.latest + '?',
+      'This runs FutureBit\'s official update, like the Update button on the Apollo dashboard. It takes about 10–20 minutes: mining and the Bitcoin node pause, then the Apollo restarts by itself. Keep it powered on until it\'s done. Houston will tell you when it\'s back.',
+      'Update now');
+    if (!ok) return;
+    $('updBtn').disabled = true;
+    try {
+      const j = await rest('POST', 'api/apollo-update');
+      upd = j.update; updWasRunning = true; updLost = 0;
+      toast('Update started. You can close Houston; it keeps track.', 'ok', 8000);
+    } catch (e) {
+      if (!handleAuthError(e)) toast(e.message, 'err');
+    } finally { $('updBtn').disabled = false; }
+    renderUpdate();
+    clearTimeout(updTimer); updTimer = setTimeout(() => loadUpdate(false), 4000);
+  });
+
+  // ---------------------------------------------------------------- front status light
+  // Apollo setting powerLedOff; the miner reads it when it starts, so a running miner restarts.
+  let ledOff = null, ledBusy = false;
+  async function loadLed() {
+    try {
+      const d = await gql('query { Settings { read { result { settings { powerLedOff nodeSoftware } } error { message } } } }');
+      const st = d.Settings.read.result && d.Settings.read.result.settings;
+      if (st) { ledOff = !!st.powerLedOff; cur.node = st.nodeSoftware; }
+    } catch (e) { if (handleAuthError(e)) return; }
+    renderLed();
+  }
+  function renderLed() {
+    const sw = $('ledSwitch');
+    sw.setAttribute('aria-checked', String(ledOff === false));
+    sw.disabled = ledOff === null || ledBusy;
+  }
+  $('ledSwitch').addEventListener('click', async () => {
+    if (ledOff === null || ledBusy) return;
+    const off = !ledOff;
+    await refresh(true);
+    const running = cur.status !== 'offline';
+    const ok = await ask((off ? 'Turn off' : 'Turn on') + ' the front status light?',
+      running ? 'Your miner will be restarted to apply (about a minute).' : 'The miner is stopped; the light follows this setting when it starts.',
+      off ? 'Turn off' : 'Turn on');
+    if (!ok) return;
+    ledBusy = true; busy = true; renderLed(); setStatus(cur.status);
+    toast(off ? 'Turning the front light off…' : 'Turning the front light on…', '', 180000);
+    try {
+      // nodeSoftware goes back unchanged (see setMode)
+      const d = await gql('query ($led: Boolean, $n: NodeSoftware) { Settings { update(input: { powerLedOff: $led, nodeSoftware: $n }) { result { settings { powerLedOff } } error { message } } } }',
+        { led: off, n: cur.node }, 60000);
+      if (d.Settings.update.error) throw new Error(d.Settings.update.error.message);
+      ledOff = off; renderLed();
+      if (running) {
+        $('dot').className = 'dot pending'; $('statusText').textContent = 'Restarting…';
+        const r = await gql('query { Miner { restart { error { message } } } }', {}, 180000);
+        if (r.Miner.restart.error) throw new Error('Saved, but the restart failed: ' + r.Miner.restart.error.message);
+        toast('Front light ' + (off ? 'off' : 'on') + '. The miner restarted; hashing ramps up over the next minute.', 'ok');
+      } else toast('Front light set to ' + (off ? 'off' : 'on') + '. It applies when the miner starts.', 'ok');
+    } catch (e) {
+      if (handleAuthError(e)) { ledBusy = busy = false; return; }
+      toast(e.message === 'timeout' ? 'No reply yet. The Apollo may still be working; check again in a minute.' : e.message, 'err');
+    } finally {
+      ledBusy = false; busy = false; renderLed();
+      refresh(true);
+    }
+  });
+
+  // ---------------------------------------------------------------- system logs
+  let actPane = 'activity', logType = 'MINER', logTimer = null, logRaw = '', logBusy = false;
+  const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
+  function showPane() {
+    setSeg($('actSeg'), 'pane', actPane);
+    $('actPane').classList.toggle('hidden', actPane !== 'activity');
+    $('logPane').classList.toggle('hidden', actPane !== 'logs');
+    clearInterval(logTimer);
+    if (actPane === 'activity') loadActivity();
+    else {
+      $('logSolo').classList.toggle('hidden', !node.solo);
+      if (logType === 'CKPOOL' && !node.solo) logType = 'MINER';
+      if (!node.solo) gql('query { Settings { read { result { settings { nodeEnableSoloMining } } } } }').then(d => {     // opened before Home loaded
+        const st = d.Settings.read.result && d.Settings.read.result.settings;
+        node.solo = !!(st && st.nodeEnableSoloMining); $('logSolo').classList.toggle('hidden', !node.solo);
+      }).catch(() => {});
+      setSeg($('logSeg'), 'log', logType);
+      loadLog();
+      if ($('logLive').getAttribute('aria-checked') === 'true') logTimer = setInterval(() => { if (!document.hidden) loadLog(true); }, 5000);
+    }
+  }
+  async function loadLog(live) {
+    if (logBusy) return;
+    logBusy = true;
+    const want = logType, lines = parseInt($('logLines').value, 10) || 300;
+    if (!live) { $('logView').textContent = 'Loading…'; $('logStamp').textContent = ''; }
+    try {
+      let content, stamp;
+      if (want === 'HOUSTON') {
+        const j = await rest('GET', 'api/houston-log');
+        content = j.content.split('\n').slice(-lines).join('\n'); stamp = j.timestamp;
+      } else {
+        const d = await gql('query ($t: LogType!, $n: Int) { Logs { read(input: { logType: $t, lines: $n }) { result { content timestamp } error { message } } } }',
+          { t: want, n: lines }, 30000);
+        const r = d.Logs.read;
+        if (r.error) throw new Error(r.error.message);
+        content = (r.result && r.result.content) || ''; stamp = r.result && r.result.timestamp;
+      }
+      if (want !== logType) return;
+      logRaw = String(content).replace(ANSI, '').replace(/\r/g, '');
+      const d = stamp ? new Date(stamp) : new Date();
+      $('logStamp').textContent = 'read ' + (isNaN(d) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' }));
+      renderLog();
+    } catch (e) {
+      if (handleAuthError(e)) return;
+      if (want !== logType) return;
+      logRaw = '';
+      $('logView').textContent = /Cannot query field|Unknown type/.test(e.message) ? 'This Apollo software doesn\'t offer logs to apps. Update it to see them here.' : 'Couldn\'t read this log: ' + e.message;
+    } finally { logBusy = false; }
+  }
+  function renderLog() {
+    const box = $('logView');
+    const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    const q = $('logFilter').value.trim().toLowerCase();
+    let rows = logRaw.split('\n');
+    while (rows.length && !rows[rows.length - 1].trim()) rows.pop();
+    const total = rows.length;
+    if (q) rows = rows.filter(r => r.toLowerCase().indexOf(q) >= 0);
+    box.textContent = '';
+    const frag = document.createDocumentFragment();
+    for (const r of rows) {
+      const span = document.createElement('span');
+      span.textContent = r || ' ';                         // log text is shown as text, never as markup
+      if (/\b(error|err|fail(ed|ure)?|fatal|panic|critical)\b/i.test(r)) span.className = 'le';
+      else if (/\bwarn(ing)?\b/i.test(r)) span.className = 'lw';
+      frag.append(span);
+    }
+    if (!rows.length) frag.append(el('span', { class: 'lm' }, q ? 'No lines contain “' + $('logFilter').value.trim() + '”.' : 'This log is empty.'));
+    box.append(frag);
+    $('logNote').textContent = (q ? rows.length + ' of ' + total + ' lines match. ' : total + ' lines. ') + 'Newest at the bottom. Read from the Apollo through its own API; nothing leaves your network.';
+    if (atBottom || !box.dataset.seen) { box.scrollTop = box.scrollHeight; box.dataset.seen = '1'; }
+  }
+  document.querySelectorAll('#actSeg [data-pane]').forEach(b => b.addEventListener('click', () => { actPane = b.dataset.pane; showPane(); }));
+  document.querySelectorAll('#logSeg [data-log]').forEach(b => b.addEventListener('click', () => {
+    logType = b.dataset.log; setSeg($('logSeg'), 'log', logType); delete $('logView').dataset.seen; loadLog();
+  }));
+  $('logLines').addEventListener('change', () => { delete $('logView').dataset.seen; loadLog(); });
+  $('logFilter').addEventListener('input', renderLog);
+  $('logRefresh').addEventListener('click', () => loadLog());
+  $('logLive').addEventListener('click', () => {
+    const on = $('logLive').getAttribute('aria-checked') !== 'true';
+    $('logLive').setAttribute('aria-checked', String(on));
+    clearInterval(logTimer);
+    if (on) { loadLog(true); logTimer = setInterval(() => { if (!document.hidden) loadLog(true); }, 5000); }
+  });
+  const logName = () => ({ MINER: 'miner', NODE: 'node', CKPOOL: 'solo-pool', SYSLOG: 'system', HOUSTON: 'houston' })[logType] || 'log';
+  $('logCopy').addEventListener('click', async () => {
+    const text = Array.from($('logView').children, c => c.textContent).join('\n');
+    try { await navigator.clipboard.writeText(text); toast('Log copied.', 'ok'); }
+    catch (e) { const r = document.createRange(); r.selectNodeContents($('logView')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast('Lines selected: copy them with your device\'s copy command.'); }
+  });
+  $('logSave').addEventListener('click', () => {
+    const d = new Date();
+    const name = 'apollo-' + logName() + '-' + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '-' + pad(d.getHours()) + pad(d.getMinutes()) + '.txt';
+    const url = URL.createObjectURL(new Blob([logRaw + '\n'], { type: 'text/plain' }));
+    const a = el('a', { href: url, download: name }); document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  });
 
   // ---------------------------------------------------------------- settings
   async function loadSettings() {
@@ -898,6 +1125,7 @@
     $('abModel').textContent = III ? 'Apollo III' : device ? 'Apollo II' : '–';
     $('abTz').textContent = device && device.tz ? device.tz : '–';
     $('abAuth').textContent = 'On';
+    loadUpdate(false); loadLed();
   }
 
   document.querySelectorAll('#view-settings [data-unit]').forEach(b => b.addEventListener('click', async () => {
@@ -1542,7 +1770,7 @@
   const hash = location.hash.slice(1).toLowerCase().replace(/-/g, '_').replace(/^supereco$/, 'super_eco');
   const hm = hash.match(/^custom_?(\d{1,2})$/);
   let pendingAction = ['start', 'stop', 'super_eco', 'eco', 'balanced', 'turbo', 'node_start', 'node_stop'].includes(hash) ? hash : (hm ? 'custom:' + hm[1] : null);
-  let pendingTab = ['schedule', 'activity'].includes(hash) ? hash : null;
+  let pendingTab = ['schedule', 'activity', 'logs'].includes(hash) ? hash : null;
   if (hash) history.replaceState(null, '', location.pathname + location.search);
 
   window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });
