@@ -4,7 +4,7 @@ This page is for anyone deciding whether to run Houston on their Apollo. It expl
 
 > Short version: Houston keeps everything on your Apollo and your own network. It has no account, no cloud service and no tracking. Passwords never leave your devices except to sign in to your own Apollo. The one thing it stores that you should protect is the Apollo sign-in it keeps so your schedule can run.
 
-Last full review: version 2.2.0 (October 2026). [Findings fixed in that review](#findings-fixed-in-the-220-review) are listed at the end. Version 2.2.1 adds the network, market and news cards; version 2.3.0 adds Apollo software updates, the front light switch and the log viewer. Their sources and protections are covered below.
+Last full review: version 2.2.0 (October 2026). [Findings fixed in that review](#findings-fixed-in-the-220-review) are listed at the end. Version 2.2.1 adds the network, market and news cards; version 2.3.0 adds Apollo software updates, the front light switch and the log viewer; version 2.4.0 adds Whisper mode (a custom-mode setting, like the dashboard's) and faster price updates. Their sources and protections are covered below.
 
 ## What you're trusting Houston with
 
@@ -61,7 +61,7 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | To | When | What's sent |
 |---|---|---|
 | `127.0.0.1:5000` (the Apollo API) and `127.0.0.1:3000` (the Apollo's model info) | Always | Your requests and the stored sign-in |
-| `api.kraken.com`, `api.exchange.coinbase.com` | Once a minute, if the bitcoin price is on (Settings) | Nothing about you: public price requests |
+| `api.kraken.com`, `api.exchange.coinbase.com` | Every 5 seconds while Houston is open on a device, once a minute otherwise, plus price history for the chosen time frame (cached, from every minute for 1H to daily for ALL); only if the bitcoin price is on (Settings) | Nothing about you: public price requests |
 | `mempool.space`, `api.coingecko.com`, `api.alternative.me`, `bitcoinmagazine.com` | Every 5 to 60 minutes, if *Network, market & news* is on (Settings) | Nothing about you: public data requests (the currency you picked, for market cap and volume) |
 | `raw.githubusercontent.com` (FutureBit's dashboard repository) | Not Houston itself: when Houston asks for the latest version (every 6 hours, and when you check), the Apollo's own API looks it up there, as it does for the dashboard. *Update* makes FutureBit's updater download from FutureBit's GitHub | Nothing about you: a public file request |
 | `ntfy.sh` (or your server) | When an alert fires, if you set a topic | The alert title and message |

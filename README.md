@@ -2,8 +2,8 @@
 
 **Houston** is mission control for the **FutureBit Apollo II and Apollo III** home bitcoin miners. It's an app that runs on the Apollo itself and works on your phone and computer, at home or anywhere:
 
-- **Live bitcoin price**: a ticker with 24-hour change and sparkline on Home, a price chart on Stats (USD, EUR, GBP, CAD, AUD, JPY or CHF)
-- **Control**: start, stop, Eco / Balanced / Turbo (Apollo III: Super Eco and a custom 5–20 TH/s target), and start/stop the Bitcoin node
+- **Live bitcoin price**: refreshed every 5 seconds while Houston is open, with time frames from 1 hour to all-time (1H … 5Y, ALL) and a chart on Stats (USD, EUR, GBP, CAD, AUD, JPY or CHF)
+- **Control**: start, stop, Eco / Balanced / Turbo, plus Houston's own **Whisper** mode on the Apollo II (half of Eco's power, the quietest). Apollo III: Super Eco and a custom 5–20 TH/s target. Start/stop the Bitcoin node too
 - **Schedule**: e.g. quiet Eco around the clock, Turbo on weekdays while nobody's home. The Apollo runs it itself, so no computer has to stay on
 - **Stats**: 24-hour and 7-day charts, electricity cost (and what Turbo adds), solo-mining odds and best share, node and system health
 - **Bitcoin network & market**: Fear & Greed Index, block height and time since the last block, block time and difficulty, market cap, dominance, volume, sats per dollar, and the latest headlines

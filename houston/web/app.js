@@ -14,6 +14,7 @@
     alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>',
     activity: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg>',
     super_eco: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16L6.4 14"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>',
+    whisper: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16H6"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/><path d="M17.5 5.5c1 .6 1.6 1.4 1.9 2.4M19.6 3.4c1.5 1 2.4 2.3 2.8 3.9" stroke-width="1.6"/></svg>',
     eco: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16L8.6 11.1"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>',
     balanced: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16L12 10"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>',
     turbo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 16a8 8 0 0 1 16 0"/><path d="M12 16L16.9 12.6"/><circle cx="12" cy="16" r="1.6" fill="currentColor" stroke="none"/></svg>',
@@ -32,6 +33,7 @@
   };
   const MODE_INFO = {
     super_eco: { name: 'Super Eco', hint: 'lowest power' },
+    whisper: { name: 'Whisper', hint: 'half of Eco' },
     eco: { name: 'Eco', hint: 'quietest' },
     balanced: { name: 'Balanced', hint: 'middle' },
     turbo: { name: 'Turbo', hint: 'fastest, loud' }
@@ -42,7 +44,10 @@
   const cur = { status: null, mode: null, node: null, hr: null };
   let hrTouched = false;
   let units = 'F', settings = null, statsRange = '24h', statsTimer = null, fleetTimer = null, statsData = null, loadedAt = Date.now();
-  const MODE_KEYS = ['super_eco', 'eco', 'balanced', 'turbo', 'custom'];
+  const MODE_KEYS = ['super_eco', 'whisper', 'eco', 'balanced', 'turbo', 'custom'];
+  // Whisper (Houston's own, Apollo I/II): the Apollo's custom mode at the lowest settings its dashboard allows
+  const WHISPER = { v: 30, f: 25 };
+  const isWhisper = st => !!st && st.minerMode === 'custom' && Number(st.voltage) === WHISPER.v && Number(st.frequency) === WHISPER.f;
   // CSS color for a mode, from the theme tokens, so it follows light / dark without redrawing
   const modeColor = t => { const k = t && t.startsWith('custom') ? 'custom' : t; return MODE_KEYS.includes(k) ? 'var(--m-' + k + ')' : 'var(--m-other)'; };
   const toUnit = c => units === 'F' ? c * 9 / 5 + 32 : c;
@@ -80,6 +85,7 @@
   const modeName = t => {
     if (!t) return '';
     if (t.startsWith('custom:')) return t.slice(7) + ' TH/s';
+    if (t === 'custom') return 'Custom (dashboard)';
     return (MODE_INFO[t] && MODE_INFO[t].name) || t;
   };
   const modeToken = (m, hr) => m === 'custom' ? 'custom:' + hr : m;
@@ -253,7 +259,7 @@
     loadSchedule(true);   // for the "next change" card
     loadUpdate(false);    // for the "new Apollo software" card
     loadPrice(); clearInterval(priceTimer);
-    priceTimer = setInterval(() => { if (!document.hidden) loadPrice(); }, 60000);
+    priceTimer = setInterval(() => { if (!document.hidden) loadPrice(); }, 5000);     // Houston refreshes it every 5 s while it's open
   }
 
   $('loginForm').addEventListener('submit', async ev => {
@@ -276,13 +282,13 @@
   // ---------------------------------------------------------------- control
   function buildModes() {
     const box = $('modes'); box.textContent = '';
-    const list = III ? ['super_eco', 'eco', 'balanced', 'turbo'] : ['eco', 'balanced', 'turbo'];
+    const list = III ? ['super_eco', 'eco', 'balanced', 'turbo'] : ['whisper', 'eco', 'balanced', 'turbo'];
     for (const m of list) {
-      const hint = m === 'eco' && III ? 'quiet' : MODE_INFO[m].hint;
+      const hint = m === 'eco' ? (III ? 'quiet' : 'efficient') : MODE_INFO[m].hint;
       box.append(el('button', { class: 'mode', type: 'button', 'data-mode': m, 'aria-label': MODE_INFO[m].name + ' mode', style: '--mc:' + modeColor(m),
         onclick: () => pickMode(m) }, el('span', { html: ICON[m], style: 'display:contents' }), MODE_INFO[m].name, el('small', {}, hint)));
     }
-    box.classList.toggle('four', III);
+    box.classList.toggle('four', list.length === 4);
     $('customRow').classList.toggle('hidden', !III);
   }
 
@@ -292,6 +298,8 @@
     $('statusText').textContent = st;
     $('startBtn').disabled = busy || st === 'online';
     $('stopBtn').disabled = busy || st === 'offline';
+    $('startSub').textContent = st === 'online' ? 'Mining now' : st === 'pending' ? 'Starting…' : 'Begin mining';
+    $('stopSub').textContent = st === 'offline' ? 'Stopped' : 'Pause mining';
     renderModes();
   }
 
@@ -309,7 +317,7 @@
   }
 
   function renderModeBadge() {
-    const mb = $('modeBadge'), mt = cur.mode === 'custom' ? 'custom:' + cur.hr : cur.mode;
+    const mb = $('modeBadge'), mt = cur.mode === 'custom' && III ? 'custom:' + cur.hr : cur.mode;
     if (!mt) { mb.classList.add('hidden'); return; }
     mb.innerHTML = modeIcon(mt);            // constant icon markup only
     mb.append(mt.startsWith('custom:') ? 'Custom ' + modeName(mt) : modeName(mt));
@@ -326,12 +334,12 @@
           stats { result { stats { master { boardsW upTime intervals { int_30 { bySol } } } pool { host intervals { int_0 { sharesAccepted sharesRejected } } }
             fans { int_0 { rpm } } slots { int_0 { temperature } } } ckpool { pool { hashrate1hr } } } error { message } }
         }
-        Settings { read { result { settings { minerMode ${III ? 'minerHashrate ' : ''}nodeSoftware } } error { message } } }
+        Settings { read { result { settings { minerMode ${III ? 'minerHashrate ' : 'voltage frequency '}nodeSoftware } } error { message } } }
       }`);
       const status = d.Miner.online.result && d.Miner.online.result.online.status;
       const st = d.Settings.read.result && d.Settings.read.result.settings;
       cur.status = (status || '').toLowerCase();
-      if (st) { cur.mode = st.minerMode; cur.node = st.nodeSoftware; cur.hr = st.minerHashrate || null; }
+      if (st) { cur.mode = !III && isWhisper(st) ? 'whisper' : st.minerMode; cur.node = st.nodeSoftware; cur.hr = st.minerHashrate || null; }
       setStatus(status);
       const boards = (d.Miner.stats.result && d.Miner.stats.result.stats) || [];
       const live = cur.status === 'online' && boards.length;
@@ -492,6 +500,7 @@
   async function setMode(mode, hr) {
     const name = mode === 'custom' ? hr + ' TH/s' : modeName(mode);
     if ((mode === 'super_eco' || mode === 'custom') && !III) { toast(name + ' needs an Apollo III.', 'err'); return refresh(true); }
+    if (mode === 'whisper' && III) { toast('Whisper is for the Apollo II. On the Apollo III, use Super Eco or a custom target.', 'err'); return refresh(true); }
     if (mode === 'custom' && !(hr >= 5 && hr <= 20)) { toast('Custom target must be 5–20 TH/s.', 'err'); return; }
     busy = true; setStatus(cur.status);
     toast('Switching to ' + name + '…', '', 60000);
@@ -500,7 +509,10 @@
       if (cur.mode === mode && (mode !== 'custom' || cur.hr === hr)) { toast('Already in ' + name + ' mode.'); return; }
       // Send nodeSoftware back unchanged: Apollo software up to 2.1.2 treats a missing
       // value as a node software change and would needlessly restart the Bitcoin node.
-      const d = mode === 'custom'
+      const d = mode === 'whisper'
+        ? await gql('query ($m: MinerMode!, $n: NodeSoftware, $v: Float, $f: Int) { Settings { update(input: { minerMode: $m, nodeSoftware: $n, voltage: $v, frequency: $f }) { result { settings { minerMode } } error { message } } } }',
+            { m: 'custom', n: cur.node, v: WHISPER.v, f: WHISPER.f }, 60000)
+        : mode === 'custom'
         ? await gql('query ($m: MinerMode!, $n: NodeSoftware, $h: Int) { Settings { update(input: { minerMode: $m, nodeSoftware: $n, minerHashrate: $h }) { result { settings { minerMode } } error { message } } } }',
             { m: mode, n: cur.node, h: hr }, 60000)
         : await gql('query ($m: MinerMode!, $n: NodeSoftware) { Settings { update(input: { minerMode: $m, nodeSoftware: $n }) { result { settings { minerMode } } error { message } } } }',
@@ -528,7 +540,8 @@
   const restartNote = () => cur.status === 'offline' ? 'The miner is stopped; it uses this mode when it starts.' : 'The miner restarts to apply it (about a minute).';
   async function pickMode(m) {
     if (m === cur.mode) return;
-    if (await ask('Switch to ' + modeName(m) + '?', restartNote(), 'Switch')) setMode(m);
+    const extra = m === 'whisper' ? 'Whisper runs at about half of Eco\'s power (about 3 TH/s), quietest and coolest. It uses the Apollo\'s custom mode at the lowest settings FutureBit\'s dashboard allows (power 30%, frequency 25), so the dashboard shows it as Custom. ' : '';
+    if (await ask('Switch to ' + modeName(m) + '?', extra + restartNote(), 'Switch')) setMode(m);
   }
   $('hrRange').addEventListener('input', () => { hrTouched = true; $('hrVal').textContent = $('hrRange').value + ' TH/s'; });
   $('hrApply').addEventListener('click', async () => {
@@ -545,7 +558,7 @@
   const strip = s => s && JSON.stringify({ enabled: s.enabled, base: s.base, tz: s.tz || null, windows: s.windows });
   const isDirty = () => !!(draft && saved && strip(draft) !== strip(saved));
 
-  const modeChoices = () => III ? ['super_eco', 'eco', 'balanced', 'turbo', 'custom'] : ['eco', 'balanced', 'turbo'];
+  const modeChoices = () => III ? ['super_eco', 'eco', 'balanced', 'turbo', 'custom'] : ['whisper', 'eco', 'balanced', 'turbo'];
 
   async function loadSchedule(background) {
     if (background && schedLoaded) return;
@@ -883,7 +896,7 @@
       const have = u.installed ? 'v' + u.installed : 'Installed version unknown';
       text = !u.installed && u.latest ? 'Latest version: v' + u.latest + ' (Houston can\'t read which one is installed)'
         : u.available ? have + ' · New version v' + u.latest + ' is available!'
-        : u.latest && u.installed ? have + ' · Up to date'
+        : u.latest && u.installed ? have + ' · Up to date (FutureBit\'s latest)'
         : u.error ? have + ' · Couldn\'t check for updates' : have;
       if (u.progress != null && u.progress < 0) text += ' · Last update failed';
     }
@@ -1292,6 +1305,7 @@
     const on = !!(settings.automation && settings.automation.enabled);
     $('autoOff').classList.toggle('hidden', on); $('autoOn').classList.toggle('hidden', !on);
     document.querySelectorAll('.iii-txt').forEach(x => x.classList.toggle('hidden', !III));
+    document.querySelectorAll('.ii-txt').forEach(x => x.classList.toggle('hidden', III));
     if (!on) return;
     if (!autoKey) { try { autoKey = (await rest('GET', 'api/automation')).key; } catch (e) { return; } }
     const base = location.origin;
@@ -1337,12 +1351,12 @@
   function sparkline(host, pts, up) {
     host.textContent = '';
     if (!pts || pts.length < 2) return;
-    const W = Math.max(120, host.clientWidth || 300), H = 56, P = 4;
+    const W = Math.max(120, host.clientWidth || 300), H = 70, P = 4;
     const ys = pts.map(p => p[1]), lo = Math.min(...ys), hi = Math.max(...ys), t0 = pts[0][0], t1 = pts[pts.length - 1][0];
     const x = t => P + (t - t0) / Math.max(1, t1 - t0) * (W - 2 * P), y = v => P + (1 - (v - lo) / Math.max(1e-9, hi - lo)) * (H - 2 * P);
     const color = 'var(--btc)';
     const d = pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(' ');
-    const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': 'Price over the last 24 hours, from ' + fmtFiat(pts[0][1], price.fiat) + ' to ' + fmtFiat(ys[ys.length - 1], price.fiat) });
+    const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none', role: 'img', 'aria-label': 'Price over ' + priceRange + ', from ' + fmtFiat(pts[0][1], price.fiat) + ' to ' + fmtFiat(ys[ys.length - 1], price.fiat) });
     const gid = 'spk' + Math.random().toString(36).slice(2, 7);
     const defs = sv('defs', {}); const g = sv('linearGradient', { id: gid, x1: 0, y1: 0, x2: 0, y2: 1 });
     g.append(sv('stop', { offset: 0, style: 'stop-color:' + color + ';stop-opacity:.22' }), sv('stop', { offset: 1, style: 'stop-color:' + color + ';stop-opacity:0' }));
@@ -1351,25 +1365,64 @@
     svg.append(sv('path', { d, fill: 'none', style: 'stroke:' + color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round', 'vector-effect': 'non-scaling-stroke' }));
     host.append(svg);
   }
-  async function loadPrice() {
+  // Time frame for the ticker: 1H … ALL, remembered on this device (default 1D)
+  const RANGE_KEY = 'houstonPriceRange', RANGES = ['1H', '1D', '7D', '1M', '3M', '6M', 'YTD', '1Y', '5Y', 'ALL'];
+  let priceRange = (() => { try { const r = localStorage.getItem(RANGE_KEY); return RANGES.includes(r) ? r : '1D'; } catch (e) { return '1D'; } })();
+  const pts = {};                                           // chart points per time frame, fetched now and then
+  const ptsEvery = r => r === '1H' ? 30000 : r === '1D' ? 60000 : 300000;
+  let priceBusy = false;
+  async function loadPrice(force) {
     if (settings && settings.price && settings.price.enabled === false) { price = null; renderPrice(); return; }
+    if (priceBusy) return;
+    priceBusy = true;
+    const r = priceRange, have = pts[r], full = force || !have || Date.now() - have.at > ptsEvery(r);
     try {
-      const r = await fetch('api/price', { cache: 'no-store' });
-      price = r.ok ? await r.json() : null;
+      const res = await fetch('api/price?range=' + r + (full ? '' : '&points=0'), { cache: 'no-store' });
+      const j = res.ok ? await res.json() : null;
+      if (j && r === priceRange) {
+        if (j.points) pts[r] = { at: Date.now(), list: j.points };
+        price = j;
+      }
     } catch (e) { /* keep the last one */ }
+    finally { priceBusy = false; }
     renderPrice();
   }
+  function chartPoints() {
+    const p = pts[priceRange];
+    if (!p || !price || !price.price) return p ? p.list : [];
+    const list = p.list.slice();
+    if (list.length && price.updated > list[list.length - 1][0]) list.push([price.updated, price.price]);   // keep the line live
+    else if (list.length) list[list.length - 1] = [list[list.length - 1][0], price.price];
+    return list;
+  }
+  function rangeChange(list) {
+    if (!list || list.length < 2 || !list[0][1]) return price && price.change;
+    return (list[list.length - 1][1] - list[0][1]) / list[0][1] * 100;
+  }
+  document.querySelectorAll('#tkRange [data-r]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();                                      // the ticker itself opens Stats
+    priceRange = b.dataset.r;
+    try { localStorage.setItem(RANGE_KEY, priceRange); } catch (x) {}
+    renderPrice(); loadPrice(true);
+  }));
   function renderPrice() {
     const on = !!(price && price.enabled && price.price);
     $('ticker').classList.toggle('hidden', !on);
     $('hdrPrice').classList.toggle('on', on);
     if (!on) { $('hdrPrice').textContent = ''; return; }
     $('tkPrice').textContent = fmtFiat(price.price, price.fiat);
-    chgPill($('tkChg'), price.change24);
-    const ageMin = Math.max(0, Math.round((Date.now() / 1000 - price.updated) / 60));
-    const range = price.high24 != null ? '24h low ' + fmtFiat(price.low24, price.fiat) + ' · high ' + fmtFiat(price.high24, price.fiat) + ' · ' : '';
-    $('tkMeta').textContent = range + price.source + ', ' + (ageMin < 1 ? 'just now' : ageMin + ' min ago') + (price.error && ageMin > 5 ? ' (can\'t update right now)' : '');
-    sparkline($('tkSpark'), price.points, (price.change24 || 0) >= 0);
+    const list = chartPoints(), ys = list.map(p => p[1]);
+    const ch = rangeChange(list);
+    chgPill($('tkChg'), ch == null ? null : Math.round(ch * 100) / 100);
+    if (ch != null) $('tkChg').setAttribute('aria-label', (ch < 0 ? 'down ' : 'up ') + Math.abs(ch).toFixed(2) + ' percent over ' + priceRange);
+    const ageSec = Math.max(0, Date.now() / 1000 - price.updated);
+    $('tkLive').classList.toggle('off', ageSec > 30);
+    $('tkLive').lastChild.textContent = ageSec > 30 ? 'Delayed' : 'Live';
+    const lohi = ys.length > 1 ? priceRange + ' low ' + fmtFiat(Math.min(...ys), price.fiat) + ' · high ' + fmtFiat(Math.max(...ys), price.fiat) + ' · ' : '';
+    $('tkMeta').textContent = lohi + price.source + ', ' + (ageSec < 60 ? 'just now' : Math.round(ageSec / 60) + ' min ago') + (price.error && ageSec > 300 ? ' (can\'t update right now)' : '')
+      + (price.rangeError && ys.length < 2 ? ' · no ' + priceRange + ' history right now' : '');
+    setSeg($('tkRange'), 'r', priceRange);
+    sparkline($('tkSpark'), list, (ch || 0) >= 0);
     const hp = $('hdrPrice'); hp.textContent = '';
     const chg = el('span', {}); chgPill(chg, price.change24);
     hp.append(el('span', { class: 'b' }, '₿'), fmtFiat(price.price, price.fiat), chg);
@@ -1378,7 +1431,7 @@
   $('hdrPrice').addEventListener('click', () => go('stats'));
   $('ticker').addEventListener('click', () => go('stats'));
   $('ticker').style.cursor = 'pointer';
-  window.addEventListener('resize', () => { if (price && view === 'control') sparkline($('tkSpark'), price.points, (price.change24 || 0) >= 0); });
+  window.addEventListener('resize', () => { if (price && view === 'control') sparkline($('tkSpark'), chartPoints(), true); });
 
   // ---------------------------------------------------------------- network, market, Fear & Greed, news (Stats)
   let market = null, marketSkew = 0, sinceTimer = null;
@@ -1766,10 +1819,10 @@
 
   // ---------------------------------------------------------------- start up
   // One-tap links (Siri Shortcuts, Android shortcuts, bookmarks): #start #stop #status
-  // #eco #balanced #turbo, Apollo III #super_eco #custom-14, #node-start #node-stop. Also #schedule and #activity.
+  // #eco #balanced #turbo, Apollo II #whisper, Apollo III #super_eco #custom-14, #node-start #node-stop. Also #schedule and #activity.
   const hash = location.hash.slice(1).toLowerCase().replace(/-/g, '_').replace(/^supereco$/, 'super_eco');
   const hm = hash.match(/^custom_?(\d{1,2})$/);
-  let pendingAction = ['start', 'stop', 'super_eco', 'eco', 'balanced', 'turbo', 'node_start', 'node_stop'].includes(hash) ? hash : (hm ? 'custom:' + hm[1] : null);
+  let pendingAction = ['start', 'stop', 'super_eco', 'whisper', 'eco', 'balanced', 'turbo', 'node_start', 'node_stop'].includes(hash) ? hash : (hm ? 'custom:' + hm[1] : null);
   let pendingTab = ['schedule', 'activity', 'logs'].includes(hash) ? hash : null;
   if (hash) history.replaceState(null, '', location.pathname + location.search);
 

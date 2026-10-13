@@ -27,7 +27,7 @@
     --bg: #0F100D; --bg2: #191A16; --card: #151612; --card2: #1E1F1A; --line: #2B2B26; --text: #EEEAE0;
     --muted: #9A968B; --green: #3DBA74; --red: #E5484D; --amber: #E2C541; --accent: #EEEAE0; --accent-ink: #0F100D;
     --btc: #F7931A; --btc-text: #F7931A;
-    --m-super_eco: #9B7BEA; --m-eco: #22B39C; --m-balanced: #4D8FEA; --m-turbo: #E5484D; --m-custom: #DB64A6; --m-other: #6E6A60;
+    --m-super_eco: #9B7BEA; --m-whisper: #94A7BC; --m-eco: #22B39C; --m-balanced: #4D8FEA; --m-turbo: #E5484D; --m-custom: #DB64A6; --m-other: #6E6A60;
     --danger-text: #FF8F92; --ok-text: #8BDDAE; --warn-text: #EBD67A;
     --top-bg: rgba(15,16,13,.9); --scrim: rgba(5,5,4,.66); --shadow: 0 12px 34px rgba(0,0,0,.5);
     --font: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif; --mono: "Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -38,7 +38,7 @@
     --bg: #F6F4EE; --bg2: #FFFFFF; --card: #FFFFFF; --card2: #ECE9E1; --line: #DAD6CA; --text: #16150F;
     --muted: #66625A; --green: #1F8A4C; --red: #C7333A; --amber: #8A6D00; --accent: #16150F; --accent-ink: #F6F4EE;
     --btc: #E8850C; --btc-text: #B35F00;
-    --m-super_eco: #7653CF; --m-eco: #16806F; --m-balanced: #2F6FCC; --m-turbo: #C7333A; --m-custom: #B8417F; --m-other: #8F8A7E;
+    --m-super_eco: #7653CF; --m-whisper: #56697E; --m-eco: #16806F; --m-balanced: #2F6FCC; --m-turbo: #C7333A; --m-custom: #B8417F; --m-other: #8F8A7E;
     --danger-text: #B42318; --ok-text: #1F7A45; --warn-text: #6E5700;
     --top-bg: rgba(246,244,238,.92); --scrim: rgba(22,21,15,.4); --shadow: 0 12px 34px rgba(22,21,15,.14);
     color-scheme: light;
@@ -48,7 +48,7 @@
       --bg: #F6F4EE; --bg2: #FFFFFF; --card: #FFFFFF; --card2: #ECE9E1; --line: #DAD6CA; --text: #16150F;
       --muted: #66625A; --green: #1F8A4C; --red: #C7333A; --amber: #8A6D00; --accent: #16150F; --accent-ink: #F6F4EE;
       --btc: #E8850C; --btc-text: #B35F00;
-      --m-super_eco: #7653CF; --m-eco: #16806F; --m-balanced: #2F6FCC; --m-turbo: #C7333A; --m-custom: #B8417F; --m-other: #8F8A7E;
+      --m-super_eco: #7653CF; --m-whisper: #56697E; --m-eco: #16806F; --m-balanced: #2F6FCC; --m-turbo: #C7333A; --m-custom: #B8417F; --m-other: #8F8A7E;
       --danger-text: #B42318; --ok-text: #1F7A45; --warn-text: #6E5700;
       --top-bg: rgba(246,244,238,.92); --scrim: rgba(22,21,15,.4); --shadow: 0 12px 34px rgba(22,21,15,.14);
       color-scheme: light;
@@ -193,6 +193,10 @@
   .node-head .dot.online { box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 18%, transparent); }
   .node-head b { font-size: 17px; text-transform: capitalize; }
   .node-head .sub { margin-left: auto; text-align: right; }
+  ol.steps { margin: 0 0 4px; padding-left: 20px; color: var(--muted); font-size: 14px; }
+  ol.steps li { margin: 4px 0; }
+  ol.steps b { color: var(--text); font-weight: 600; }
+  a.btnlink { display: inline-flex; align-items: center; text-decoration: none; color: var(--text); }
   .logseg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
   .logseg::-webkit-scrollbar { display: none; }
   .logseg { display: flex; width: 100%; }
@@ -327,6 +331,49 @@
   @media (min-width: 1180px) { .hdr-price.on { display: inline-flex; } }
   @media (max-width: 600px) { .tk-spark, .tk-spark svg { height: 42px; } .tk-price { font-size: 30px; } }
 
+  /* ---------- 2.4: bigger price, smaller hashrate, time frames, Start/Stop cards ---------- */
+  .tk-price { font-size: 56px; font-weight: 700; font-stretch: 70%; letter-spacing: -.015em; line-height: .95; }
+  @media (max-width: 600px) { .tk-price { font-size: 52px; } }
+  .live { display: inline-flex; align-items: center; gap: 6px; font: 500 11px var(--mono); color: var(--ok-text); letter-spacing: .06em; text-transform: uppercase; }
+  .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 25%, transparent); }
+  .tk-chart { grid-column: 1 / -1; min-width: 0; }
+  .tk-spark, .tk-spark svg { height: 70px !important; }
+  .tk-range { display: flex; gap: 2px; margin-top: 8px; overflow-x: auto; scrollbar-width: none; }
+  .tk-range::-webkit-scrollbar { display: none; }
+  .tk-range button { flex: 1 0 auto; border: 0; background: none; color: var(--muted); font: 500 12px var(--mono); padding: 6px 7px; border-radius: 6px; letter-spacing: .03em; }
+  .tk-range button[aria-pressed="true"] { background: color-mix(in srgb, var(--btc) 16%, transparent); color: var(--btc-text); }
+  @media (min-width: 860px) {
+    .ticker { grid-template-columns: auto auto 1fr; }
+    .tk-chart { grid-column: 3; grid-row: 1 / span 2; }
+    .tk-price { font-size: 64px; }
+  }
+  .hashline b { font-size: clamp(52px, 14vw, 78px); }
+  .hashline span { font-size: 17px; }
+  button.big { justify-content: flex-start; gap: 12px; padding: 12px 14px; border-radius: 12px; background: var(--card); border: 1px solid var(--line); color: var(--text); text-align: left; }
+  button.big:not(:disabled) { background: var(--card); color: var(--text); border-color: var(--line); }
+  .pw-ic { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; flex: none; }
+  .pw-ic svg { width: 18px !important; height: 18px !important; }
+  #startBtn .pw-ic { background: color-mix(in srgb, var(--green) 16%, transparent); }
+  #stopBtn .pw-ic { background: color-mix(in srgb, var(--red) 16%, transparent); }
+  .pw-tx b { display: block; font-size: 17px; font-weight: 650; }
+  .pw-tx small { display: block; font: 12px var(--mono); color: var(--muted); margin-top: 1px; }
+  button.big:not(:disabled):hover { border-color: var(--muted); }
+  #startBtn:not(:disabled) { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+  #stopBtn:not(:disabled) { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+  button.big:disabled { opacity: 1; }
+  button.big:disabled .pw-ic { background: var(--card2); }
+  button.big:disabled .pw-ic svg { color: var(--muted) !important; }
+  button.big:disabled b { color: var(--muted); }
+  .live.off { color: var(--muted); } .live.off i { background: var(--muted); box-shadow: none; }
+  .node-btns button { display: inline-flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 8px 12px; border-radius: 10px;
+    background: var(--card); border: 1px solid var(--line); color: var(--text); font-size: 15px; }
+  .node-btns svg { width: 28px; height: 28px; padding: 7px; border-radius: 50%; box-sizing: border-box; }
+  #nodeStartBtn svg { background: color-mix(in srgb, var(--green) 16%, transparent); }
+  #nodeStopBtn svg { background: color-mix(in srgb, var(--red) 16%, transparent); }
+  #nodeStartBtn:not(:disabled) { border-color: color-mix(in srgb, var(--green) 45%, var(--line)); }
+  #nodeStopBtn:not(:disabled) { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+  .node-btns button:disabled { opacity: 1; color: var(--muted); }
+  .node-btns button:disabled svg { background: var(--card2); color: var(--muted); }
   /* ---------- home extras ---------- */
   .details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
   .details div { min-width: 0; }
@@ -506,9 +553,10 @@
   <section id="view-control" class="view hidden" role="tabpanel" aria-label="Control">
     <div class="ticker hidden" id="ticker" aria-live="polite">
       <div class="tk-coin" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.4 11.3c.9-.5 1.4-1.3 1.3-2.4-.2-1.6-1.6-2.2-3.4-2.3V4.4h-1.3v2.1h-1V4.4H8.7v2.1H6.3v1.4h1c.5 0 .7.2.7.6v6.9c0 .4-.2.6-.6.6h-1l-.2 1.5h2.4v2.1H10v-2.1h1v2.1h1.3v-2.1c2.3-.1 3.9-.8 4.1-2.9.1-1.6-.6-2.5-2-2.9zM10 8h1.6c.9 0 1.8.3 1.8 1.2 0 1-.9 1.3-1.8 1.3H10V8zm2 7.3h-2v-3.2h2c1.1 0 2 .4 2 1.6 0 1.2-.9 1.6-2 1.6z"/></svg></div>
-      <div class="tk-top"><span class="tk-label">Bitcoin</span><span class="chg flat" id="tkChg">–</span></div>
+      <div class="tk-top"><span class="tk-label">Bitcoin</span><span class="live off" id="tkLive"><i></i>Live</span><span class="chg flat" id="tkChg">–</span></div>
       <div><span class="tk-price" id="tkPrice">–</span> <div class="tk-meta" id="tkMeta">&nbsp;</div></div>
-      <div class="tk-spark" id="tkSpark"></div>
+      <div class="tk-chart"><div class="tk-spark" id="tkSpark"></div>
+      <div class="tk-range" role="group" aria-label="Price time frame" id="tkRange"><button type="button" data-r="1H">1H</button><button type="button" data-r="1D">1D</button><button type="button" data-r="7D">7D</button><button type="button" data-r="1M">1M</button><button type="button" data-r="3M">3M</button><button type="button" data-r="6M">6M</button><button type="button" data-r="YTD">YTD</button><button type="button" data-r="1Y">1Y</button><button type="button" data-r="5Y">5Y</button><button type="button" data-r="ALL">ALL</button></div></div>
     </div>
     <div class="control-grid">
       <div>
@@ -535,10 +583,8 @@
           <div class="poolline" id="poolLine"></div>
         </div>
         <div class="actions">
-          <button class="big" id="startBtn" type="button">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Start</button>
-          <button class="big" id="stopBtn" type="button">
-            <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>Stop</button>
+          <button class="big" id="startBtn" type="button"><span class="pw-ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span><span class="pw-tx"><b>Start</b><small id="startSub">Begin mining</small></span></button>
+          <button class="big" id="stopBtn" type="button"><span class="pw-ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg></span><span class="pw-tx"><b>Stop</b><small id="stopSub">Pause mining</small></span></button>
         </div>
         <button class="next hidden" id="updCard" type="button">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8 11l4-4 4 4"/></svg>
@@ -839,7 +885,7 @@
       </div>
       <div>
         <div class="card" id="apolloCard"><h2>This Apollo</h2>
-          <div class="row-field"><span class="lbl">Apollo software<span class="sub" id="updSub">Checking…</span></span>
+          <div class="row-field"><span class="lbl">FutureBit Apollo software<span class="sub" id="updSub">Checking…</span></span>
             <button class="primary small hidden" type="button" id="updBtn">Update</button>
           </div>
           <div id="updProg" class="hidden" style="margin:-4px 0 14px">
@@ -858,20 +904,27 @@
           <ul class="found" id="foundList"></ul>
         </div>
         <div class="card"><h2>Siri, Google &amp; shortcuts</h2>
-          <p class="note" style="margin-top:0">Give a shortcut on your phone a key so it can ask Houston for status or switch modes, without opening the app. On iPhone that lets you say “Hey Siri, Apollo status”.</p>
+          <p class="note" style="margin-top:0">Check on your Apollo or switch modes by voice, or with one tap from your home screen, without opening Houston. Say “Hey Siri, Apollo status” and hear how it's doing.</p>
+          <ol class="steps">
+            <li><b>Create a key</b> below: it's what lets your phone talk to Houston.</li>
+            <li><b>Make a shortcut</b> on your phone and paste the key in. The guide shows each tap, for iPhone (Siri), Android and Google Home.</li>
+          </ol>
+          <div class="btnrow" style="margin:4px 0 12px"><a class="secondary small btnlink" href="https://github.com/eisenreichGIT/houston-apollo/blob/main/docs/voice-assistants.md" target="_blank" rel="noopener noreferrer" id="voiceGuide">Open the setup guide ↗</a></div>
           <div id="autoOff"><button class="primary small" type="button" id="makeKey">Create a key</button></div>
           <div id="autoOn" class="hidden">
-            <span class="sub">Key (send it as <b>Authorization: Bearer</b> …)</span>
+            <span class="sub">Your key: keep it private, like a password</span>
             <code class="copy" id="autoKey"></code>
-            <span class="sub">Status, read aloud (GET)</span><code class="copy" id="autoSay"></code>
-            <span class="sub">Actions (POST): start, stop, eco, balanced, turbo, node-start, node-stop<span class="iii-txt hidden">, super_eco, custom-14</span></span><code class="copy" id="autoAct"></code>
-            <div class="btnrow"><button class="secondary small" type="button" id="copyKey">Copy key</button><button class="secondary small" type="button" id="rotateKey">New key</button><button class="linkbtn danger-link" type="button" id="killKey">Turn off</button></div>
-            <p class="note">Step-by-step for Siri, Android and Google Home: <b style="color:var(--text)">docs/voice-assistants.md</b> in the download.</p>
+            <div class="btnrow"><button class="primary small" type="button" id="copyKey">Copy key</button><button class="secondary small" type="button" id="rotateKey">New key</button><button class="linkbtn danger-link" type="button" id="killKey">Turn off</button></div>
+            <details class="table" style="margin-top:12px"><summary>Addresses for your shortcut</summary>
+              <span class="sub">The guide tells you where these go. Send the key as <b>Authorization: Bearer</b> &lt;key&gt;.</span>
+              <span class="sub">Status, read aloud (GET)</span><code class="copy" id="autoSay"></code>
+              <span class="sub">Actions (POST): start, stop, eco, balanced, turbo, node-start, node-stop<span class="ii-txt hidden">, whisper</span><span class="iii-txt hidden">, super_eco, custom-14</span></span><code class="copy" id="autoAct"></code>
+            </details>
           </div>
         </div>
         <div class="card"><h2>About</h2>
           <div class="kv">
-            <div><span>Houston</span><b id="abVer">–</b></div>
+            <div><span>Houston (this app)</span><b id="abVer">–</b></div>
             <div><span>Apollo</span><b id="abModel">–</b></div>
             <div><span>Schedule time zone</span><b id="abTz">–</b></div>
             <div><span>Background sign-in</span><b id="abAuth">–</b></div>

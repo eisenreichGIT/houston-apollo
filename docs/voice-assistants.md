@@ -8,7 +8,7 @@ Houston has a small **automation API**. A shortcut on your phone (or Home Assist
 | Status, as JSON | `GET` | `http://<apollo>:8088/api/v1/status` |
 | Do something | `POST` | `http://<apollo>:8088/api/v1/action/<action>` |
 
-Actions: `start`, `stop`, `eco`, `balanced`, `turbo`, `node-start`, `node-stop`, and on an Apollo III also `super_eco` and `custom-14` (any 5–20).
+Actions: `start`, `stop`, `eco`, `balanced`, `turbo`, `node-start`, `node-stop`; on an Apollo II also `whisper`; on an Apollo III also `super_eco` and `custom-14` (any 5–20).
 
 Every request needs the header `Authorization: Bearer <your key>`.
 

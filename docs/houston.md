@@ -53,7 +53,7 @@ Sign in with your dashboard password. At home with Tailscale off, use the home a
 
 ## The tabs
 
-**Home**: the **bitcoin price** up top (24-hour change, low and high, sparkline; tap it for the chart), miner status with hashrate, power and hashboard temperature, plus efficiency (W/TH), fan speed, shares, uptime and pool. Start and Stop, the power modes (Apollo III: also Super Eco and a custom 5-20 TH/s target), the Bitcoin node card (sync, block height, peers, disk, Start/Stop), the next scheduled change, **Your Apollos** if you added others, and a card when new Apollo software is available.
+**Home**: the **bitcoin price** up top, live (it refreshes every 5 seconds while Houston is open). Pick a time frame under the chart (1H, 1D, 7D, 1M, 3M, 6M, YTD, 1Y, 5Y, ALL) for its change, low and high; each device remembers its choice, 1D by default. Tap the price for the Stats chart. Then miner status with hashrate, power and hashboard temperature, plus efficiency (W/TH), fan speed, shares, uptime and pool. Start and Stop, the power modes (Apollo II: also **Whisper**, see below; Apollo III: also Super Eco and a custom 5-20 TH/s target), the Bitcoin node card (sync, block height, peers, disk, Start/Stop), the next scheduled change, **Your Apollos** if you added others, and a card when new Apollo software is available.
 
 **Stats**: 24-hour and 7-day charts of the bitcoin price, hashrate (with a strip showing which mode was active), power and temperature (hover or tap for exact values; each chart also has a table view). Tiles for average hashrate, mining time, energy per day and electricity cost per month. **Energy by mode**, including how much the faster modes add compared with your normal mode. **Solo mining** (when you mine to the Apollo's own solo pool): best share, chance of a block today, expected time to a block. **Bitcoin node**: last block, network hashrate, difficulty, connections, version and the 10 most recent blocks with the pool that found them. **System**: CPU, memory, system and node drives, system temperature. Then **Bitcoin network & market**: the Fear & Greed Index, block height, time since the last block, average block time and the next difficulty change, market cap, BTC dominance, 24-hour volume, sats per dollar (or your currency) and the latest Bitcoin Magazine headlines.
 
@@ -73,12 +73,20 @@ Times use the time zone shown under *Coming up* (your phone's or computer's when
 - **This Apollo**: the Apollo software version, with *Update* when FutureBit has a new one (see [Updating the Apollo software](#updating-the-apollo-software)), and the **Front status light** switch. Changing the light restarts a running miner (about a minute; Houston asks first). A stopped miner stays stopped and uses the setting when it starts.
 - **Appearance**: Light, Dark (default) or System, which follows your phone or computer. Saved on each device separately; the sun/moon button in the top bar switches between light and dark.
 - **Temperature**: °F or °C (°F by default).
-- **Bitcoin price**: on or off, and the currency (USD, EUR, GBP, CAD, AUD, JPY, CHF). Houston fetches it once a minute from Kraken's public API (Coinbase as a backup for USD, EUR and GBP), so the app itself never contacts outside sites. When your electricity currency matches, the cost tile also shows the cost in sats.
+- **Bitcoin price**: on or off, and the currency (USD, EUR, GBP, CAD, AUD, JPY, CHF). Houston fetches it from Kraken's public API every 5 seconds while Houston is open somewhere, and once a minute otherwise (Coinbase as a backup for USD, EUR and GBP), so the app itself never contacts outside sites. When your electricity currency matches, the cost tile also shows the cost in sats.
 - **Network, market & news**: on or off. Houston fetches these from mempool.space, CoinGecko, alternative.me and Bitcoin Magazine (public data, no account), every 5 to 60 minutes.
 - **Electricity**: your price per kWh, for the cost tiles.
 - **Alerts on your phone**: notifications on this device and/or the ntfy app, see below.
 - **Your Apollos**: add your other Apollos (or **Find on my network**) to see them all on Home; if they run Houston too, *Open Houston* jumps to theirs.
 - **Siri, Google & shortcuts**: a key for phone shortcuts and voice assistants, see [voice-assistants.md](voice-assistants.md).
+
+## Whisper mode
+
+Whisper is Houston's own power mode for the Apollo II (and the original Apollo): about **half of Eco's power**, the quietest and coolest way to mine. On an Apollo II it measured 107 W and 2.9 TH/s, against Eco's 209 W and 5.5 TH/s, and it's slightly more efficient per TH.
+
+It uses the Apollo's built-in custom mode at the lowest settings FutureBit's dashboard allows: power 30% and frequency 25. That's why the Apollo dashboard shows *Custom* while Whisper is on. Running below FutureBit's presets is the low-stress direction (FutureBit's custom-mode warning is about overclocking and overvolting), but it is outside the presets FutureBit tested. Like any mode change, switching to Whisper restarts a running miner.
+
+Use it like any other mode: on Home, as the normal mode or a window in the schedule, in shortcuts (`whisper`) and as a `#whisper` link. The Apollo III doesn't need it: it has Super Eco and custom targets down to 5 TH/s.
 
 ## Alerts on your phone
 

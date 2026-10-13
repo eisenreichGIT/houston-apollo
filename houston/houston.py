@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 HERE = os.path.dirname(os.path.realpath(__file__))
 WEB_DIR = os.path.realpath(os.environ.get("HOUSTON_WEB", os.path.join(HERE, "web")))
 STATE_DIR = os.environ.get("STATE_DIRECTORY") or os.environ.get("HOUSTON_STATE") or os.path.join(HERE, "state")
@@ -42,7 +42,29 @@ AUTH_FILE = os.path.join(STATE_DIR, "auth.json")
 ACTIVITY_FILE = os.path.join(STATE_DIR, "activity.json")
 FIRED_FILE = os.path.join(STATE_DIR, "fired.json")
 
-MODES = ("super_eco", "eco", "balanced", "turbo")
+MODES = ("super_eco", "whisper", "eco", "balanced", "turbo")
+# Whisper (Houston's own mode, Apollo I/II): the Apollo's custom mode at its lowest settings, the minimum the
+# Apollo dashboard allows (power 30 %, frequency 25). Measured on an Apollo II: about half of Eco's power
+# (107 W vs 209 W) at 2.9 TH/s, slightly more efficient. The Apollo III has Super Eco and custom targets instead.
+WHISPER = {"voltage": 30.0, "frequency": 25}
+
+
+def is_whisper(st):
+    try:
+        return st.get("minerMode") == "custom" and float(st.get("voltage")) == WHISPER["voltage"] \
+            and int(st.get("frequency")) == WHISPER["frequency"]
+    except (TypeError, ValueError):
+        return False
+
+
+def mode_token(st, iii):
+    """The Houston mode token for the Apollo's settings: eco, ..., custom:<TH/s> (III), whisper, custom (II dashboard)."""
+    m = st.get("minerMode")
+    if m == "custom":
+        if iii:
+            return "custom:%s" % st.get("minerHashrate")
+        return "whisper" if is_whisper(st) else "custom"
+    return m
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 LOCK = threading.RLock()
 STATIC = {"/": "index.html", "/index.html": "index.html", "/manifest.json": "manifest.json",
@@ -228,7 +250,7 @@ def token_ok(token):
 def label(token):
     if token.startswith("custom:"):
         return token.split(":")[1] + " TH/s"
-    return {"super_eco": "Super Eco"}.get(token, token.capitalize())
+    return {"super_eco": "Super Eco", "custom": "Custom (dashboard)"}.get(token, token.capitalize())
 
 
 def miner_status(token):
@@ -272,17 +294,23 @@ def run_action(action, token):
     mode, hr = (action.split(":") + [None])[:2] if action.startswith("custom:") else (action, None)
     if mode in ("super_eco", "custom") and not iii:
         raise RuntimeError("%s needs an Apollo III" % label(action))
-    fields = "minerMode minerHashrate nodeSoftware" if iii else "minerMode nodeSoftware"
+    if mode == "whisper" and iii:
+        raise RuntimeError("Whisper is for the Apollo II; on the Apollo III use Super Eco or a custom target")
+    fields = "minerMode minerHashrate nodeSoftware" if iii else "minerMode voltage frequency nodeSoftware"
     s = apollo("query { Settings { read { result { settings { %s } } } } }" % fields, token=token)
     s = s["Settings"]["read"]["result"]["settings"]
     status = miner_status(token)
-    if s.get("minerMode") == mode and (mode != "custom" or str(s.get("minerHashrate")) == str(hr)):
+    if mode_token(s, iii) == (action if mode != "custom" else "custom:%s" % hr):
         return "Already in %s mode" % label(action)
     # Send nodeSoftware back unchanged (Apollo software up to 2.1.2 would otherwise restart the node)
     if mode == "custom":
         q = ("query ($m: MinerMode!, $n: NodeSoftware, $h: Int) { Settings { update(input: "
              "{ minerMode: $m, nodeSoftware: $n, minerHashrate: $h }) { error { message } } } }")
         v = {"m": "custom", "n": s.get("nodeSoftware"), "h": int(hr)}
+    elif mode == "whisper":
+        q = ("query ($m: MinerMode!, $n: NodeSoftware, $v: Float, $f: Int) { Settings { update(input: "
+             "{ minerMode: $m, nodeSoftware: $n, voltage: $v, frequency: $f }) { error { message } } } }")
+        v = {"m": "custom", "n": s.get("nodeSoftware"), "v": WHISPER["voltage"], "f": WHISPER["frequency"]}
     else:
         q = ("query ($m: MinerMode!, $n: NodeSoftware) { Settings { update(input: "
              "{ minerMode: $m, nodeSoftware: $n }) { error { message } } } }")
@@ -328,6 +356,8 @@ def valid_mode(m, iii):
         return iii and h.isdigit() and 5 <= int(h) <= 20
     if m == "super_eco":
         return iii
+    if m == "whisper":
+        return not iii
     return m in ("eco", "balanced", "turbo")
 
 
@@ -712,9 +742,9 @@ def take_sample():
         iii = chassis() == "apollo-iii"
         try:
             st = apollo("query { Settings { read { result { settings { minerMode%s } } } } }"
-                        % (" minerHashrate" if iii else ""), token=token, timeout=15)
+                        % (" minerHashrate" if iii else " voltage frequency"), token=token, timeout=15)
             st = st["Settings"]["read"]["result"]["settings"]
-            s["m"] = "custom:%s" % st.get("minerHashrate") if st.get("minerMode") == "custom" else st.get("minerMode")
+            s["m"] = mode_token(st, iii)
         except Exception:
             pass
         try:
@@ -1280,31 +1310,83 @@ def http_json(url, timeout=10):
         return json.loads(r.read().decode())
 
 
-def kraken_price(fiat, with_history):
-    pair = "XBT" + fiat
-    d = http_json("%s/0/public/Ticker?pair=%s" % (KRAKEN, pair))
+PRICE_FAST = float(os.environ.get("HOUSTON_PRICE_FAST", "5"))   # while someone has Houston open
+PRICE_WATCH = 45                                                  # "open" = asked for the price in the last 45 s
+_price_seen = [0.0]
+# Time frames for the price chart: span in seconds (None = since Jan 1 / everything), Kraken OHLC interval in
+# minutes (Kraken returns the latest 720 candles), how long a fetched history is reused, and the Coinbase
+# candle size used as a backup (Coinbase returns up to 300 candles; None = no backup for this range).
+RANGES = {
+    "1H": (3600, 1, 60, 60),
+    "1D": (86400, 5, 300, 300),
+    "7D": (7 * 86400, 30, 900, 3600),
+    "1M": (30 * 86400, 240, 3600, 21600),
+    "3M": (91 * 86400, 1440, 6 * 3600, 86400),
+    "6M": (182 * 86400, 1440, 6 * 3600, 86400),
+    "YTD": (None, 1440, 6 * 3600, 86400),
+    "1Y": (365 * 86400, 1440, 6 * 3600, None),
+    "5Y": (5 * 365 * 86400, 10080, 24 * 3600, None),
+    "ALL": (None, 21600, 24 * 3600, None),
+}
+_hist = {}                 # (fiat, interval) -> {"at": time, "rows": [[t, close], ...], "source": name}
+_hist_lock = threading.Lock()
+
+
+def kraken_ticker(fiat):
+    d = http_json("%s/0/public/Ticker?pair=XBT%s" % (KRAKEN, fiat))
     if d.get("error"):
         raise RuntimeError("; ".join(d["error"]))
     t = next(iter(d["result"].values()))
-    out = {"price": float(t["c"][0]), "high24": float(t["h"][1]), "low24": float(t["l"][1])}
-    if with_history:
-        o = http_json("%s/0/public/OHLC?pair=%s&interval=15" % (KRAKEN, pair), timeout=15)
-        if o.get("error"):
-            raise RuntimeError("; ".join(o["error"]))
-        rows = next(v for k, v in o["result"].items() if k != "last")
-        out["history"] = [[int(r[0]), float(r[4])] for r in rows]          # [time, close], 15 min apart
-    return out
+    return {"price": float(t["c"][0]), "high24": float(t["h"][1]), "low24": float(t["l"][1])}
 
 
-def coinbase_price(fiat, with_history):
+def coinbase_ticker(fiat):
     if fiat not in ("USD", "EUR", "GBP"):
-        raise RuntimeError("Coinbase fallback only covers USD, EUR and GBP")
+        raise RuntimeError("Coinbase backup only covers USD, EUR and GBP")
     t = http_json("%s/products/BTC-%s/ticker" % (COINBASE, fiat))
-    out = {"price": float(t["price"])}
-    if with_history:
-        rows = http_json("%s/products/BTC-%s/candles?granularity=900" % (COINBASE, fiat), timeout=15)
-        out["history"] = sorted([int(r[0]), float(r[4])] for r in rows)     # [time, low, high, open, close, volume]
-    return out
+    return {"price": float(t["price"])}
+
+
+def fetch_history(fiat, rng):
+    """[[time, close], ...] for a time frame, cached; Kraken first, Coinbase as a backup where it reaches."""
+    span, interval, keep, cb = RANGES[rng]
+    key = (fiat, interval)
+    with _hist_lock:
+        h = _hist.get(key)
+        if h and time.time() - h["at"] < keep:
+            return h["rows"], h["source"]
+        errors = []
+        try:
+            o = http_json("%s/0/public/OHLC?pair=XBT%s&interval=%d" % (KRAKEN, fiat, interval), timeout=15)
+            if o.get("error"):
+                raise RuntimeError("; ".join(o["error"]))
+            rows = next(v for k, v in o["result"].items() if k != "last")
+            got = ([[int(r[0]), float(r[4])] for r in rows], "Kraken")
+        except Exception as e:
+            errors.append("Kraken: %s" % e)
+            got = None
+        if got is None and cb and fiat in ("USD", "EUR", "GBP"):
+            try:
+                rows = http_json("%s/products/BTC-%s/candles?granularity=%d" % (COINBASE, fiat, cb), timeout=15)
+                got = (sorted([int(r[0]), float(r[4])] for r in rows), "Coinbase")   # [time, low, high, open, close, vol]
+            except Exception as e:
+                errors.append("Coinbase: %s" % e)
+        if got is None:
+            if h:
+                return h["rows"], h["source"]       # an older copy beats nothing
+            raise RuntimeError("; ".join(errors) or "no price history for this time frame")
+        _hist[key] = {"at": time.time(), "rows": got[0], "source": got[1]}
+        if len(_hist) > 24:
+            _hist.pop(min(_hist, key=lambda k: _hist[k]["at"]))
+        return got
+
+
+def range_start(rng, now):
+    span = RANGES[rng][0]
+    if rng == "YTD":
+        t = time.localtime(now)
+        return time.mktime((t.tm_year, 1, 1, 0, 0, 0, 0, 0, -1))
+    return 0 if span is None else now - span
 
 
 def refresh_price(force_history=False):
@@ -1313,34 +1395,31 @@ def refresh_price(force_history=False):
         return
     fiat = st.get("fiat", "USD")
     now = time.time()
-    need_hist = force_history or _price.get("fiat") != fiat or now - _price.get("historyAt", 0) > 900
     errors = []
-    for name, fn in (("Kraken", kraken_price), ("Coinbase", coinbase_price)):
+    for name, fn in (("Kraken", kraken_ticker), ("Coinbase", coinbase_ticker)):
         try:
-            got = fn(fiat, need_hist)
+            got = fn(fiat)
         except Exception as e:
             errors.append("%s: %s" % (name, e))
             continue
         with LOCK:
             if _price.get("fiat") != fiat:
                 _price.clear()
-            _price.update({"fiat": fiat, "price": got["price"], "source": name, "updated": int(now), "error": None})
-            for k in ("high24", "low24"):
-                _price[k] = got.get(k)
-            if _price.get("high24") is not None:      # the range always includes the price right now
-                _price["high24"] = max(_price["high24"], got["price"])
-                _price["low24"] = min(_price["low24"], got["price"])
-            if "history" in got:
-                _price["history"] = got["history"]
-                _price["historyAt"] = now
-            hist = _price.get("history") or []
-            if hist:   # 24 h change from the closest reading a day ago
-                then = min(hist, key=lambda r: abs(r[0] - (now - 86400)))
-                if abs(then[0] - (now - 86400)) < 3 * 3600 and then[1]:
+            _price.update({"fiat": fiat, "price": got["price"], "source": name, "updated": int(now), "error": None,
+                           "high24": got.get("high24"), "low24": got.get("low24")})
+        try:   # 24 h change (for the header chip, Siri and the 1D view) from the 1D history
+            rows, _ = fetch_history(fiat, "1D")
+            then = min(rows, key=lambda r: abs(r[0] - (now - 86400))) if rows else None
+            with LOCK:
+                if then and abs(then[0] - (now - 86400)) < 3 * 3600 and then[1]:
                     _price["change24"] = round((got["price"] - then[1]) / then[1] * 100, 2)
-                day = [r[1] for r in hist if r[0] >= now - 86400]
-                if day and _price.get("high24") is None:
-                    _price["high24"], _price["low24"] = max(day + [got["price"]]), min(day + [got["price"]])
+                day = [r[1] for r in rows if r[0] >= now - 86400] + [got["price"]]
+                if _price.get("high24") is None:
+                    _price["high24"], _price["low24"] = max(day), min(day)
+                else:          # the range always includes the price right now
+                    _price["high24"], _price["low24"] = max(_price["high24"], got["price"]), min(_price["low24"], got["price"])
+        except Exception as e:
+            log("price history not updated: %s" % e)
         return
     with LOCK:
         _price["error"] = "; ".join(errors)
@@ -1348,30 +1427,48 @@ def refresh_price(force_history=False):
 
 
 def price_loop():
+    last = 0.0
     while True:
-        try:
-            refresh_price()
-        except Exception as e:
-            log("price error: %s" % e)
-        time.sleep(PRICE_EVERY)
+        now = time.time()
+        every = PRICE_FAST if now - _price_seen[0] < PRICE_WATCH else PRICE_EVERY
+        if now - last >= every:
+            last = now
+            try:
+                refresh_price()
+            except Exception as e:
+                log("price error: %s" % e)
+        time.sleep(1)
 
 
-def price_view(rng="24h"):
+def price_view(rng="1D", points=True):
+    """The price, with the change, low and high over the time frame `rng` (1H … ALL) and its chart points."""
     st = get_settings()["price"]
-    with LOCK:
-        p = dict(_price)
     if not st.get("enabled"):
         return {"enabled": False}
+    rng = {"24h": "1D", "7d": "7D"}.get(rng, rng)
+    if rng not in RANGES:
+        rng = "1D"
+    with LOCK:
+        p = dict(_price)
     now = time.time()
-    hist = p.pop("history", None) or []
-    p.pop("historyAt", None)
-    if rng == "7d":
-        pts = [r for r in hist if r[0] >= now - 7 * 86400][::4]          # hourly
-    else:
-        pts = [r for r in hist if r[0] >= now - 86400]                   # every 15 minutes
-    if pts and p.get("price"):
-        pts = pts + [[int(p.get("updated") or now), p["price"]]]
-    p.update({"enabled": True, "fiat": p.get("fiat") or st.get("fiat", "USD"), "points": pts, "range": rng})
+    fiat = p.get("fiat") or st.get("fiat", "USD")
+    p.update({"enabled": True, "fiat": fiat, "range": rng, "ranges": list(RANGES)})
+    try:
+        rows, src = fetch_history(fiat, rng)
+        start = range_start(rng, now)
+        pts = [r for r in rows if r[0] >= start]
+        if p.get("price"):
+            pts = pts + [[int(p.get("updated") or now), p["price"]]]
+        if len(pts) >= 2 and pts[0][1]:
+            ys = [r[1] for r in pts]
+            p.update({"change": round((pts[-1][1] - pts[0][1]) / pts[0][1] * 100, 2), "low": min(ys), "high": max(ys),
+                      "from": pts[0][0]})
+        if points:
+            p["points"] = pts
+    except Exception as e:
+        p["rangeError"] = str(e)[:200]
+        if points:
+            p["points"] = []
     return p
 
 
@@ -1784,7 +1881,7 @@ def login_failed(ip):
         _login_fail.pop(next(iter(_login_fail)))
 
 
-AUTO_ACTIONS = {"start", "stop", "eco", "balanced", "turbo", "super_eco", "node_start", "node_stop"}
+AUTO_ACTIONS = {"start", "stop", "whisper", "eco", "balanced", "turbo", "super_eco", "node_start", "node_stop"}
 
 
 def automation_action(action):
@@ -1800,6 +1897,11 @@ def automation_action(action):
         raise RuntimeError("Houston isn't signed in yet. Open Houston once and sign in.")
     if a.startswith("custom:") and not 5 <= int(a[7:]) <= 20:
         raise ValueError("Custom target must be 5 to 20 TH/s")
+    iii = chassis() == "apollo-iii"
+    if a == "whisper" and iii:
+        raise ValueError("Whisper is for the Apollo II. On the Apollo III use super_eco or custom-5.")
+    if (a == "super_eco" or a.startswith("custom:")) and not iii:
+        raise ValueError("%s needs an Apollo III. Try whisper for the quietest mode." % label(a))
 
     def work():
         try:
@@ -1908,6 +2010,8 @@ def note_app_action(body, response):
         mode = v.get("m") or v.get("mode") or v.get("minerMode")
         if mode == "custom" and v.get("h"):
             mode = "custom:%s" % v["h"]
+        elif mode == "custom" and is_whisper({"minerMode": "custom", "voltage": v.get("v"), "frequency": v.get("f")}):
+            mode = "whisper"
         if isinstance(mode, str):
             note_intent(mode)
             add_activity(mode, True, "Mode set to %s" % label(mode), source="app")
@@ -2010,7 +2114,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/market":            # cached network / market / news data (public, no sign-in)
             return self._send(200, market_view())
         if path == "/api/price":             # cached bitcoin price (public market data, no sign-in)
-            return self._send(200, price_view("7d" if self._query().get("range") == "7d" else "24h"))
+            q = self._query()
+            _price_seen[0] = time.time()     # someone is looking: refresh every few seconds
+            return self._send(200, price_view(q.get("range", "1D"), q.get("points") != "0"))
         if path in ("/api/v1/status", "/api/v1/say"):
             if not automation_ok(self._automation_key()):
                 return self._send(401, "Wrong or missing Houston key.", "text/plain; charset=utf-8")

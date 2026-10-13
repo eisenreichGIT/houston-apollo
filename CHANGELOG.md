@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4.0 (2026-10-13)
+
+- **Whisper mode** (Apollo II and original Apollo, Houston only): about half of Eco's power, the quietest and coolest way to mine. Measured on an Apollo II: 107 W and 2.9 TH/s vs Eco's 209 W and 5.5 TH/s, slightly more efficient (36.8 vs 38.5 W/TH). It uses the Apollo's own custom mode at the lowest settings FutureBit's dashboard allows (power 30%, frequency 25), so the dashboard shows it as Custom. Whisper works everywhere modes do: Home, the schedule, charts and energy by mode, Siri and shortcuts (`whisper`), and `#whisper` links.
+- **Live bitcoin price**: while Houston is open on any device, the price refreshes every 5 seconds (once a minute otherwise), with a *Live* badge.
+- **Price time frames** on Home: 1H, 1D, 7D, 1M, 3M, 6M, YTD, 1Y, 5Y and ALL, with the change, low and high for the chosen frame. Defaults to 1D; each device remembers its choice. History from Kraken (Coinbase as a backup up to 6 months).
+- **New Home look**: a bigger bitcoin price, a smaller hashrate readout, and Start/Stop (and the node's Start/Stop) as cards that show what's possible at a glance (*Mining now*, *Pause mining*).
+- Settings › Siri, Google & shortcuts explains the two steps in plain words and has an **Open the setup guide** button; the technical details fold away.
+- Clearer version labels: *FutureBit Apollo software* (FutureBit's) vs *Houston (this app)*. Custom settings made in the Apollo dashboard show as *Custom (dashboard)* instead of "Custom null TH/s".
+
 ## 2.3.0 (2026-10-12)
 
 - **Apollo software updates from Houston**: Settings › This Apollo shows your Apollo software version and says *New version v2.x.x is available!* when FutureBit releases one; a card on Home says so too. *Update* runs FutureBit's own updater (the same one as the Update button on the Apollo dashboard) and shows its progress. Houston follows the update through the Apollo's restart, logs the result in Activity and tells you when it's done (or if it failed or got stuck). Alerts for stops and the unreachable Apollo stay quiet during the update.

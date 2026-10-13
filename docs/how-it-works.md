@@ -59,6 +59,8 @@ query { Miner { restart { error { message } } } }    # only if the miner is runn
 
 > **Gotcha: always send `nodeSoftware` back.** In Apollo Web OS up to v2.1.2, `Settings.update` compares the stored node software with `input.nodeSoftware`. If you leave it out, `undefined` never equals the stored value, so the API decides the Bitcoin node software is changing and **stops and restarts your Bitcoin node** on every update. Read the current value first and send it back unchanged (it may be `null`, which is fine). FutureBit fixed this in 2.1.3; sending it back is harmless there.
 
+**Custom mode on the Apollo I/II (Houston's Whisper).** `minerMode: custom` with `voltage` (the dashboard's *Power* slider, 30–95 %, passed to the miner as `-brd_ocp`, a current limit) and `frequency` (25–60, passed as `-osc`). The miner then runs with `-powermode config`. Houston's Whisper is `{ minerMode: custom, voltage: 30, frequency: 25, nodeSoftware: <unchanged> }`, the dashboard's minimum: about 107 W and 2.9 TH/s on an Apollo II.
+
 `Settings.update` regenerates `/opt/apolloapi/backend/apollo-miner/mode` and `miner_config`. The miner reads them when it starts, so the new mode applies only after a restart. That's why these tools restart a running miner and leave a stopped one alone.
 
 ## Apollo III
