@@ -29,11 +29,12 @@
     node: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/></svg>',
     update: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8 11l4-4 4 4"/></svg>',
     light: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1.1 2.2h5c.1-1 .5-1.7 1.1-2.2A6 6 0 0 0 12 3z"/></svg>',
+    btc: '<svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="btcH" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F9A13A"/><stop offset="1" stop-color="#F08A0E"/></linearGradient></defs><circle cx="32" cy="32" r="32" fill="url(#btcH)"/><path d="M46.11 27.441c.636-4.258-2.606-6.547-7.039-8.074l1.438-5.768-3.512-.875-1.4 5.616c-.922-.23-1.87-.447-2.812-.662l1.41-5.653-3.509-.875-1.439 5.766c-.764-.174-1.514-.346-2.242-.527l.004-.018-4.842-1.209-.934 3.75s2.605.597 2.55.634c1.422.355 1.68 1.296 1.636 2.042l-1.638 6.571c.098.025.225.061.365.117l-.37-.092-2.297 9.205c-.174.432-.615 1.08-1.609.834.035.051-2.552-.637-2.552-.637l-1.743 4.019 4.57 1.139c.85.213 1.683.436 2.502.646l-1.453 5.835 3.507.875 1.44-5.772c.957.26 1.887.5 2.797.726L27.504 50.8l3.511.875 1.453-5.823c5.987 1.133 10.49.676 12.384-4.739 1.527-4.36-.076-6.875-3.226-8.515 2.294-.529 4.022-2.038 4.483-5.155zM38.087 38.69c-1.086 4.36-8.426 2.004-10.807 1.412l1.928-7.729c2.38.594 10.011 1.77 8.88 6.317zm1.085-11.312c-.99 3.966-7.1 1.951-9.083 1.457l1.748-7.007c1.983.494 8.05 1.416 7.335 5.55z" fill="#fff" transform="translate(1.118 0.587)"/></svg>',
     trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>'
   };
   const MODE_INFO = {
     super_eco: { name: 'Super Eco', hint: 'lowest power' },
-    whisper: { name: 'Whisper', hint: 'half of Eco' },
+    whisper: { name: 'Whisper', hint: 'quietest' },
     eco: { name: 'Eco', hint: 'quietest' },
     balanced: { name: 'Balanced', hint: 'middle' },
     turbo: { name: 'Turbo', hint: 'fastest, loud' }
@@ -1419,13 +1420,14 @@
     $('tkLive').classList.toggle('off', ageSec > 30);
     $('tkLive').lastChild.textContent = ageSec > 30 ? 'Delayed' : 'Live';
     const lohi = ys.length > 1 ? priceRange + ' low ' + fmtFiat(Math.min(...ys), price.fiat) + ' · high ' + fmtFiat(Math.max(...ys), price.fiat) + ' · ' : '';
-    $('tkMeta').textContent = lohi + price.source + ', ' + (ageSec < 60 ? 'just now' : Math.round(ageSec / 60) + ' min ago') + (price.error && ageSec > 300 ? ' (can\'t update right now)' : '')
-      + (price.rangeError && ys.length < 2 ? ' · no ' + priceRange + ' history right now' : '');
+    $('tkMeta').textContent = (lohi ? lohi.replace(/ · $/, '') : '') + (ageSec > 300 ? (lohi ? ' · ' : '') + 'last update ' + Math.round(ageSec / 60) + ' min ago' : '')
+      + (price.rangeError && ys.length < 2 ? ' · no ' + priceRange + ' history right now' : '') || '\u00a0';
+    $('tkMeta').title = 'From ' + price.source;
     setSeg($('tkRange'), 'r', priceRange);
     sparkline($('tkSpark'), list, (ch || 0) >= 0);
     const hp = $('hdrPrice'); hp.textContent = '';
     const chg = el('span', {}); chgPill(chg, price.change24);
-    hp.append(el('span', { class: 'b' }, '₿'), fmtFiat(price.price, price.fiat), chg);
+    hp.append(el('span', { class: 'b', html: ICON.btc }), fmtFiat(price.price, price.fiat), chg);
     hp.setAttribute('aria-label', 'Bitcoin ' + fmtFiat(price.price, price.fiat) + ', open price chart');
   }
   $('hdrPrice').addEventListener('click', () => go('stats'));

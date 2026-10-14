@@ -308,8 +308,8 @@
   /* ---------- bitcoin ticker (the only orange in the app) ---------- */
   .ticker { position: relative; overflow: hidden; display: grid; grid-template-columns: auto 1fr; gap: 2px 16px; align-items: center;
     background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin-bottom: 14px; }
-  .tk-coin { width: 42px; height: 42px; border-radius: 50%; background: var(--btc); color: #fff; display: grid; place-items: center; grid-row: span 2; }
-  .tk-coin svg { width: 26px; height: 26px; }
+  .tk-coin { width: 46px; height: 46px; grid-row: span 2; }      /* the Bitcoin mark (public domain), centered on its coin */
+  .tk-coin svg { width: 100%; height: 100%; display: block; }
   .tk-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; min-width: 0; }
   .tk-label { color: var(--muted); font: 500 11.5px var(--mono); letter-spacing: .09em; text-transform: uppercase; }
   .tk-price { font-size: 34px; font-weight: 650; font-stretch: 78%; letter-spacing: -.005em; line-height: 1.05; color: var(--btc-text); font-variant-numeric: tabular-nums; }
@@ -326,7 +326,8 @@
   }
   .hdr-price { display: none; align-items: center; gap: 8px; margin-left: 12px; padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line);
     background: var(--card); font: 500 13.5px var(--mono); color: var(--text); cursor: pointer; white-space: nowrap; }
-  .hdr-price .b { color: var(--btc-text); font-weight: 700; }
+  .hdr-price .b { display: inline-flex; width: 18px; height: 18px; }
+  .hdr-price .b svg { width: 100%; height: 100%; }
   .hdr-price .chg { padding: 0; background: none; font-size: 12.5px; }
   @media (min-width: 1180px) { .hdr-price.on { display: inline-flex; } }
   @media (max-width: 600px) { .tk-spark, .tk-spark svg { height: 42px; } .tk-price { font-size: 30px; } }
@@ -552,7 +553,7 @@
   <!-- ======================= control ======================= -->
   <section id="view-control" class="view hidden" role="tabpanel" aria-label="Control">
     <div class="ticker hidden" id="ticker" aria-live="polite">
-      <div class="tk-coin" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M14.4 11.3c.9-.5 1.4-1.3 1.3-2.4-.2-1.6-1.6-2.2-3.4-2.3V4.4h-1.3v2.1h-1V4.4H8.7v2.1H6.3v1.4h1c.5 0 .7.2.7.6v6.9c0 .4-.2.6-.6.6h-1l-.2 1.5h2.4v2.1H10v-2.1h1v2.1h1.3v-2.1c2.3-.1 3.9-.8 4.1-2.9.1-1.6-.6-2.5-2-2.9zM10 8h1.6c.9 0 1.8.3 1.8 1.2 0 1-.9 1.3-1.8 1.3H10V8zm2 7.3h-2v-3.2h2c1.1 0 2 .4 2 1.6 0 1.2-.9 1.6-2 1.6z"/></svg></div>
+      <div class="tk-coin" aria-hidden="true"><svg viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="btcG" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F9A13A"/><stop offset="1" stop-color="#F08A0E"/></linearGradient></defs><circle cx="32" cy="32" r="32" fill="url(#btcG)"/><path d="M46.11 27.441c.636-4.258-2.606-6.547-7.039-8.074l1.438-5.768-3.512-.875-1.4 5.616c-.922-.23-1.87-.447-2.812-.662l1.41-5.653-3.509-.875-1.439 5.766c-.764-.174-1.514-.346-2.242-.527l.004-.018-4.842-1.209-.934 3.75s2.605.597 2.55.634c1.422.355 1.68 1.296 1.636 2.042l-1.638 6.571c.098.025.225.061.365.117l-.37-.092-2.297 9.205c-.174.432-.615 1.08-1.609.834.035.051-2.552-.637-2.552-.637l-1.743 4.019 4.57 1.139c.85.213 1.683.436 2.502.646l-1.453 5.835 3.507.875 1.44-5.772c.957.26 1.887.5 2.797.726L27.504 50.8l3.511.875 1.453-5.823c5.987 1.133 10.49.676 12.384-4.739 1.527-4.36-.076-6.875-3.226-8.515 2.294-.529 4.022-2.038 4.483-5.155zM38.087 38.69c-1.086 4.36-8.426 2.004-10.807 1.412l1.928-7.729c2.38.594 10.011 1.77 8.88 6.317zm1.085-11.312c-.99 3.966-7.1 1.951-9.083 1.457l1.748-7.007c1.983.494 8.05 1.416 7.335 5.55z" fill="#fff" transform="translate(1.118 0.587)"/></svg></div>
       <div class="tk-top"><span class="tk-label">Bitcoin</span><span class="live off" id="tkLive"><i></i>Live</span><span class="chg flat" id="tkChg">–</span></div>
       <div><span class="tk-price" id="tkPrice">–</span> <div class="tk-meta" id="tkMeta">&nbsp;</div></div>
       <div class="tk-chart"><div class="tk-spark" id="tkSpark"></div>
@@ -591,33 +592,33 @@
           <span><span class="sub">Apollo software</span><b id="updCardText"></b></span>
           <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </button>
-        <button class="next hidden" id="nextCard" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
-          <span><span class="sub" id="nextLabel">Next scheduled change</span><b id="nextText"></b></span>
-          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-        </button>
+        <div class="card">
+          <h2>Power mode</h2>
+          <div class="modes" id="modes"></div>
+          <div class="custom-row hidden" id="customRow">
+            <div class="custom-head">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+              Custom target <b id="hrVal">12 TH/s</b>
+            </div>
+            <div class="custom-ctl">
+              <input type="range" id="hrRange" min="5" max="20" step="1" value="12" aria-label="Target hashrate in TH/s">
+              <button class="primary" type="button" id="hrApply">Set</button>
+            </div>
+            <div class="sub" style="margin-top:6px">The Apollo III tunes itself to hit this hashrate (5–20 TH/s).</div>
+          </div>
+          <p class="note" style="margin:12px 0 0">Changing mode restarts a running miner (about a minute). A stopped miner stays stopped and uses the new mode when it starts.</p>
+        </div>
         <div class="card hidden" id="fleetCard">
           <h2>Your Apollos</h2>
           <ul class="fleet" id="fleetList"></ul>
         </div>
       </div>
       <div>
-      <div class="card">
-        <h2>Power mode</h2>
-        <div class="modes" id="modes"></div>
-        <div class="custom-row hidden" id="customRow">
-          <div class="custom-head">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
-            Custom target <b id="hrVal">12 TH/s</b>
-          </div>
-          <div class="custom-ctl">
-            <input type="range" id="hrRange" min="5" max="20" step="1" value="12" aria-label="Target hashrate in TH/s">
-            <button class="primary" type="button" id="hrApply">Set</button>
-          </div>
-          <div class="sub" style="margin-top:6px">The Apollo III tunes itself to hit this hashrate (5–20 TH/s).</div>
-        </div>
-        <p class="note" style="margin:12px 0 0">Changing mode restarts a running miner (about a minute). A stopped miner stays stopped and uses the new mode when it starts.</p>
-      </div>
+      <button class="next hidden" id="nextCard" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+        <span><span class="sub" id="nextLabel">Next scheduled change</span><b id="nextText"></b></span>
+        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
       <div class="card hidden" id="nodeCard">
         <h2>Bitcoin node</h2>
         <div id="nodeNoDrive" class="note hidden">This Apollo has no drive for the blockchain, so it doesn't run a node.</div>
