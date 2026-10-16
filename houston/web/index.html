@@ -518,6 +518,36 @@
   .devices li span { flex: 1; min-width: 0; }
   .devices li small { display: block; color: var(--muted); font: 11.5px var(--mono); }
   .danger-link { color: var(--danger-text) !important; }
+  /* 2.7.0: monthly report, pool payouts, health check, rate lookup, block celebration */
+  .mnav { font-size: 20px; line-height: 1; padding: 0 8px; text-transform: none; }
+  .mnav[disabled] { opacity: .3; pointer-events: none; }
+  .rep-title { text-transform: none; letter-spacing: 0; font: 600 15px var(--sans, inherit); color: var(--text); min-width: 7.5em; text-align: center; }
+  .kv.three { grid-template-columns: 1fr 1fr 1fr; }
+  @media (max-width: 420px) { .kv.three { grid-template-columns: 1fr 1fr; } }
+  .hc-group { font: 500 11.5px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+  .hc { list-style: none; margin: 0; padding: 0; }
+  .hc li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 4px 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+  .hc li:first-child { border-top: 0; }
+  .hc .ic { width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; margin-top: 1px; font: 700 11px var(--mono); color: var(--bg); }
+  .hc .ok .ic { background: var(--ok-text); } .hc .warn .ic { background: #E0A100; } .hc .fail .ic { background: var(--danger-text); } .hc .off .ic { background: var(--line); color: var(--muted); }
+  .hc b { font-weight: 600; } .hc .d { color: var(--muted); font-size: 13.5px; overflow-wrap: anywhere; }
+  .hc .fx { grid-column: 2; font-size: 13.5px; color: var(--text); }
+  .hc-sum { display: flex; gap: 8px; flex-wrap: wrap; margin: 2px 0 6px; }
+  .hc-sum span { font: 12px var(--mono); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; }
+  .plans { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+  .plans li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
+  .plans li b { font-weight: 600; overflow-wrap: anywhere; } .plans .d { grid-column: 1; color: var(--muted); font-size: 13px; }
+  .plans li .secondary { grid-row: 1 / span 2; grid-column: 2; }
+  .tou-mo { grid-column: 1 / -1; font: 11.5px var(--mono); color: var(--muted); margin: -2px 0 0; }
+  #party { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(8, 8, 6, .82); padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+  #party canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #party .box { position: relative; text-align: center; max-width: 520px; color: #F4F1EA; }
+  #party .coin { width: 120px; height: 120px; margin: 0 auto 18px; animation: spin 2.4s ease-in-out infinite; }
+  #party .coin svg { width: 100%; height: 100%; display: block; }
+  #party h2 { font-size: clamp(30px, 8vw, 52px); line-height: 1.05; margin: 0 0 10px; text-wrap: balance; letter-spacing: 0; text-transform: none; color: #F7931A; display: block; }
+  #party p { color: #D8D3C6; font-size: 17px; margin: 0 0 22px; }
+  @keyframes spin { 0%, 100% { transform: rotateY(0) } 50% { transform: rotateY(180deg) } }
+  @media (prefers-reduced-motion: reduce) { #party .coin { animation: none; } }
   .section-title { font: 500 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 26px 0 14px;
     display: flex; align-items: center; gap: 12px; }
   .section-title::after { content: ""; flex: 1; height: 1px; background: var(--line); }
@@ -735,12 +765,20 @@
   <!-- ======================= activity ======================= -->
   <section id="view-activity" class="view hidden" role="tabpanel" aria-label="Activity">
     <div class="filters">
-      <div class="seg" role="group" aria-label="Show" id="actSeg"><button type="button" data-pane="activity" aria-pressed="true">Activity</button><button type="button" data-pane="logs" aria-pressed="false">Logs</button></div>
+      <div class="seg" role="group" aria-label="Show" id="actSeg"><button type="button" data-pane="activity" aria-pressed="true">Activity</button><button type="button" data-pane="logs" aria-pressed="false">Logs</button><button type="button" data-pane="health" aria-pressed="false">Health</button></div>
     </div>
     <div class="card" id="actPane">
       <h2>Activity <span class="spacer"></span><button class="linkbtn" id="actRefresh" type="button">Refresh</button></h2>
       <ul class="act" id="actList"></ul>
       <div class="empty hidden" id="actEmpty">Nothing yet. Scheduled changes and the actions you take here show up in this list.</div>
+    </div>
+    <div class="card hidden" id="healthPane">
+      <h2>Health check <span class="spacer"></span><button class="linkbtn" id="healthRun" type="button">Check again</button></h2>
+      <p class="note" id="healthLead" style="margin-top:0">Houston checks everything it depends on: your Apollo, its own setup, alerts, remote access and the data it fetches.</p>
+      <div class="hc-sum" id="healthSum"></div>
+      <div id="healthList"></div>
+      <div class="btnrow" style="margin-top:14px"><button class="secondary small" type="button" id="healthCopy">Copy report</button></div>
+      <p class="note" style="margin-bottom:0">The report has no passwords, keys or addresses, so you can paste it into a GitHub issue or a Reddit post when asking for help.</p>
     </div>
     <div class="card hidden" id="logPane">
       <h2>System logs <span class="spacer"></span><span class="sub" id="logStamp" style="text-transform:none;letter-spacing:0"></span></h2>
@@ -861,6 +899,30 @@
       </div>
       <details class="table econ-how"><summary>How this is worked out</summary><ul id="econHow"></ul></details>
     </div>
+    <div id="reportSection" class="hidden">
+      <h2 class="section-title">Monthly report</h2>
+      <div class="stats-grid">
+        <div>
+          <div class="card" id="reportCard"><h2><button class="linkbtn mnav" id="repPrev" type="button" aria-label="Previous month">‹</button><span class="rep-title" id="repMonth">–</span><button class="linkbtn mnav" id="repNext" type="button" aria-label="Next month">›</button><span class="spacer"></span><button class="linkbtn" id="repCsv" type="button">Download CSV</button></h2>
+            <div class="verdict"><b id="repNet">–</b><span id="repNetLbl"></span></div>
+            <div class="econ-split" id="repSplit"></div>
+            <div class="chart" id="chRepDays" tabindex="0" aria-label="Net per day this month" style="margin-top:14px"></div>
+            <div class="kv three" id="repKv" style="margin-top:12px"></div>
+            <p class="note" id="repNote" style="margin-bottom:0"></p>
+          </div>
+        </div>
+        <div>
+          <div class="card hidden" id="poolCard"><h2>Pool payouts <span class="spacer"></span><span class="sub" id="poolName" style="text-transform:none;letter-spacing:0"></span></h2>
+            <div class="verdict"><b id="poolRatio">–</b><span id="poolRatioLbl"></span></div>
+            <div class="chart" id="chPool" tabindex="0" aria-label="What the pool paid each day compared with what Houston expected, last 30 days" style="margin-top:12px"></div>
+            <div class="legend" id="poolLegend"></div>
+            <div class="kv" id="poolKv" style="margin-top:12px"></div>
+            <p class="note" id="poolNote" style="margin-bottom:0"></p>
+          </div>
+          <div class="card note hidden" id="poolSetup">Connect your pool (Settings › Mining economics › Pool) to compare what it pays with what Houston expects. Works with OCEAN and Braiins Pool.</div>
+        </div>
+      </div>
+    </div>
     <div id="marketSection" class="hidden">
       <h2 class="section-title">Bitcoin network &amp; market</h2>
       <div class="stats-grid">
@@ -924,7 +986,17 @@
             <input id="currency" class="short" type="text" maxlength="4" aria-label="Currency symbol" style="max-width:60px">
             <input id="rate" class="short" type="number" step="0.001" min="0" max="10" inputmode="decimal" placeholder="0.16">
           </div>
-          <div class="btnrow"><button class="primary small" type="button" id="saveRate">Save</button></div>
+          <div class="btnrow"><button class="primary small" type="button" id="saveRate">Save</button><button class="secondary small" type="button" id="rateLookup">Look up my utility's rates</button></div>
+          <div id="ratePanel" class="hidden" style="margin-top:14px">
+            <p class="note" style="margin-top:0">From OpenEI's U.S. Utility Rate Database (US only). Houston fills in your price per kWh and any time-of-use prices. Check them against your bill: where you choose your own electricity supplier (like Pennsylvania), plans here may not include the supplier's price.</p>
+            <div class="row-field"><label for="rateZip">ZIP code</label><input id="rateZip" class="short" type="text" inputmode="numeric" maxlength="5" autocomplete="postal-code" placeholder="16803"><button class="primary small" type="button" id="rateSearch">Search</button></div>
+            <ul class="plans" id="ratePlans"></ul>
+            <details class="table" style="margin-top:10px"><summary>Your own OpenEI key (if the search says the shared key is busy)</summary>
+              <p class="note">Free at <a href="https://openei.org/services/api/signup/" target="_blank" rel="noopener noreferrer">openei.org/services/api/signup</a>. Stored on your Apollo only.</p>
+              <div class="row-field"><label for="openeiKey">OpenEI key<span class="sub" id="openeiState">Not set: uses the shared demo key</span></label><input id="openeiKey" type="password" autocomplete="off" spellcheck="false" maxlength="64"></div>
+              <div class="btnrow"><button class="secondary small" type="button" id="saveKey">Save key</button></div>
+            </details>
+          </div>
         </div>
         <div class="card" id="econCard"><h2>Mining economics</h2>
           <p class="note" style="margin-top:0">Shows on Stats what your Apollo earns and costs, from its own readings, your electricity price, the network and the bitcoin price.</p>
@@ -950,6 +1022,13 @@
           <div class="checks" id="apModes" style="margin-top:12px"></div>
           <div class="row-field"><span class="lbl">May stop the miner<span class="sub">When every mode loses money. Off keeps it mining (and solo hunting) in the cheapest mode.</span></span><button class="switch" id="apStop" type="button" role="switch" aria-checked="false" aria-label="Autopilot may stop the miner"></button></div>
           <div class="row-field"><label for="apGain">Switch only if it saves at least<span class="sub">Per day; avoids restarting the miner for pennies</span></label><input id="apGain" class="short" type="number" step="0.01" min="0" max="10" inputmode="decimal" placeholder="0.05"></div>
+          <h3 class="sub-h">Pool</h3>
+          <p class="note" style="margin-top:0">Compare what your pool actually pays with what Houston expects from your hashrate (Stats › Monthly report).</p>
+          <div class="row-field"><label for="poolKind">Your pool</label>
+            <select class="input" id="poolKind" style="width:auto;min-width:170px;font-size:15px;padding:9px 10px">
+              <option value="none">Not connected</option><option value="ocean">OCEAN</option><option value="braiins">Braiins Pool</option></select></div>
+          <div class="row-field pool-f hidden" data-for="ocean"><label for="poolAddr">Your payout address<span class="sub">The bitcoin address you mine to on OCEAN. Public data; no account needed.</span></label><input id="poolAddr" type="text" autocomplete="off" spellcheck="false" maxlength="90" placeholder="bc1q…"></div>
+          <div class="row-field pool-f hidden" data-for="braiins"><label for="poolToken">API token (read-only)<span class="sub" id="poolTokenSub">Make a read-only token in your Braiins Pool account settings.</span></label><input id="poolToken" type="password" autocomplete="off" spellcheck="false" maxlength="200"></div>
           <details class="table"><summary>More: pool fee, unmeasured watts</summary>
             <div class="row-field" style="margin-top:8px"><label for="econFee">Pool fee<span class="sub">Percent; 0 for solo mining</span></label><input id="econFee" class="short" type="number" step="0.1" min="0" max="10" inputmode="decimal" placeholder="0"></div>
             <div class="row-field"><label for="econExtraW">Watts the miner doesn't report<span class="sub">Its computer and drive; a plug meter shows the true total</span></label><input id="econExtraW" class="short" type="number" step="1" min="0" max="200" inputmode="numeric" placeholder="0"></div>
@@ -982,18 +1061,31 @@
             <label><input type="checkbox" data-a="node">Node stopped</label>
             <label><input type="checkbox" data-a="disk">Node drive almost full</label>
             <label><input type="checkbox" data-a="block">Solo block found</label>
-            <label><input type="checkbox" data-a="update">Apollo software update</label>
+            <label><input type="checkbox" data-a="update">Software updates</label>
             <label><input type="checkbox" data-a="econ">Mining economics</label>
+            <label><input type="checkbox" data-a="report">Monthly report</label>
           </div>
           <div class="row-field"><label for="hotLimit">Hot above<span class="sub">Hashboard temperature</span></label>
             <input id="hotLimit" class="short" type="number" step="1"><span id="hotUnit" class="sub">°F</span></div>
           <div class="btnrow" style="margin-top:12px"><button class="primary small" type="button" id="saveAlerts">Save</button><button class="secondary small" type="button" id="testAlert">Send a test everywhere</button></div>
+          <div class="btnrow" style="margin-top:4px"><button class="linkbtn" type="button" id="partyPreview">Preview the block-found celebration</button></div>
         </div>
       </div>
       <div>
         <div class="card hidden" id="appCard"><h2>Houston app</h2>
           <p class="note" style="margin-top:0" id="appNote">You're using the Houston app.</p>
           <div class="btnrow"><button class="primary small" type="button" id="appSettings">App settings</button></div>
+        </div>
+        <div class="card" id="houCard"><h2>Houston (this app)</h2>
+          <div class="row-field"><span class="lbl">Version <span id="houVer">–</span><span class="sub" id="houSub">Checking…</span></span>
+            <button class="primary small hidden" type="button" id="houBtn">Update</button>
+          </div>
+          <div id="houProg" class="hidden" style="margin:-4px 0 14px">
+            <div class="bar" style="margin-top:0"><i id="houBar"></i></div>
+            <p class="note" id="houNote" style="margin:8px 0 0"></p>
+          </div>
+          <details class="table hidden" id="houNotesBox" style="margin:-6px 0 12px"><summary>What's new</summary><div class="note" id="houNotes" style="white-space:pre-wrap"></div></details>
+          <div class="btnrow" style="margin:-6px 0 0"><button class="linkbtn" type="button" id="houCheck">Check for updates</button><button class="linkbtn" type="button" id="houHealth">Run a health check</button></div>
         </div>
         <div class="card" id="apolloCard"><h2>This Apollo</h2>
           <div class="row-field"><span class="lbl">FutureBit Apollo software<span class="sub" id="updSub">Checking…</span></span>
@@ -1060,6 +1152,15 @@
 
 <nav class="tabbar hidden" id="tabbar" role="tablist" aria-label="Sections"></nav>
 <div id="toast" class="hidden" role="status" aria-live="polite"></div>
+<div id="party" class="hidden" role="dialog" aria-modal="true" aria-labelledby="partyTitle">
+  <canvas id="partyCanvas"></canvas>
+  <div class="box">
+    <div class="coin" id="partyCoin" aria-hidden="true"></div>
+    <h2 id="partyTitle">Your Apollo found a block!</h2>
+    <p id="partyText">Your solo pool reports a block found.</p>
+    <button class="primary" type="button" id="partyClose">Amazing!</button>
+  </div>
+</div>
 <div class="scrim hidden" id="scrim">
   <div class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="dlgTitle" aria-describedby="dlgText">
     <h3 id="dlgTitle"></h3>

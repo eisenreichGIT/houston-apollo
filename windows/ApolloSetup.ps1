@@ -157,18 +157,18 @@ $Logo = @'
 <Viewbox xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Width="42" Height="42">
   <Canvas Width="100" Height="100">
     <Rectangle Width="100" Height="100" RadiusX="22.5" RadiusY="22.5" Fill="#0F100D" Stroke="#3A3A33" StrokeThickness="1"/>
-    <Ellipse Canvas.Left="9" Canvas.Top="36" Width="82" Height="28" Stroke="#F7931A" StrokeThickness="3.5">
-      <Ellipse.RenderTransform><RotateTransform Angle="-18" CenterX="41" CenterY="14"/></Ellipse.RenderTransform>
+    <Ellipse Canvas.Left="14" Canvas.Top="38" Width="72" Height="22" Stroke="#F7931A" StrokeThickness="3.5">
+      <Ellipse.RenderTransform><RotateTransform Angle="-15" CenterX="36" CenterY="11"/></Ellipse.RenderTransform>
     </Ellipse>
     <Rectangle Canvas.Left="35" Canvas.Top="29" Width="10" Height="42" RadiusX="2" RadiusY="2" Fill="#EEEAE0"/>
     <Rectangle Canvas.Left="55" Canvas.Top="29" Width="10" Height="42" RadiusX="2" RadiusY="2" Fill="#EEEAE0"/>
     <Rectangle Canvas.Left="44" Canvas.Top="46" Width="12" Height="8" Fill="#EEEAE0"/>
     <Canvas>
-      <Canvas.RenderTransform><RotateTransform Angle="-18" CenterX="50" CenterY="50"/></Canvas.RenderTransform>
-      <Path Data="M 9,50 A 41,14 0 0 0 91,50" Stroke="#0F100D" StrokeThickness="8.5"/>
-      <Path Data="M 9,50 A 41,14 0 0 0 91,50" Stroke="#F7931A" StrokeThickness="3.5"/>
-      <Ellipse Canvas.Left="84.5" Canvas.Top="43.5" Width="13" Height="13" Fill="#0F100D"/>
-      <Ellipse Canvas.Left="87" Canvas.Top="46" Width="8" Height="8" Fill="#EEEAE0"/>
+      <Canvas.RenderTransform><RotateTransform Angle="-15" CenterX="50" CenterY="49"/></Canvas.RenderTransform>
+      <Path Data="M 14,49 A 36,11 0 0 0 86,49" Stroke="#0F100D" StrokeThickness="6.5"/>
+      <Path Data="M 14,49 A 36,11 0 0 0 86,49" Stroke="#F7931A" StrokeThickness="3.5"/>
+      <Ellipse Canvas.Left="79.5" Canvas.Top="42.5" Width="13" Height="13" Fill="#0F100D"/>
+      <Ellipse Canvas.Left="82" Canvas.Top="45" Width="8" Height="8" Fill="#EEEAE0"/>
     </Canvas>
   </Canvas>
 </Viewbox>

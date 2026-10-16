@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.7.0 (2026-10-16)
+
+- **One-tap Houston updates**: Settings › Houston (this app) says when a new Houston is out, shows what's new, and *Update* installs it. Mining isn't affected; only Houston restarts. Houston itself never gets root: it leaves the version number for a small root helper (added by the installer), which downloads that release from GitHub itself, checks it, installs only Houston's files, and puts the old version back if the new one doesn't start. **Run the installer once more** to get it; after that, updates are one tap. New alert when an update is out (Settings › Alerts › Software updates).
+- **Health check** (Activity › Health, or `#health`): one screen that checks the Apollo API, the background sign-in, readings, the node and its drive, Houston's storage, the schedule, the clock, alerts (devices, ntfy), Tailscale, and every outside source Houston uses, with what to do about anything that's off. *Copy report* gives a text summary without passwords, keys or addresses, for asking for help.
+- **Monthly report** (Stats, or `#report`): earned (in your currency and sats), electricity, heat saved and net for each month, a bar per day, mining time, average hashrate, the hottest hashboard, the mode it ran in most, best share and blocks found. Earlier months stay available (Houston now keeps a small daily summary for about 3 years), and *Download CSV* exports the days. On the 1st, a **notification** with last month's numbers (Settings › Alerts › Monthly report).
+- **Pool payouts** (Stats): connect **OCEAN** (your payout address; public data) or **Braiins Pool** (a read-only API token) in Settings › Mining economics › Pool, and see what the pool actually paid over 30 days next to what Houston expected from your hashrate, plus your unpaid balance, last payout, and the hashrate the pool sees.
+- **Utility rate lookup** (US): Settings › Electricity › *Look up my utility's rates* lists the residential plans for your ZIP code from OpenEI's U.S. Utility Rate Database and fills in your price and any time-of-use prices, including seasonal ones. Time-of-use prices can now apply to certain months only.
+- **Block found celebration**: if your solo pool finds a block, every device with Houston open shows a full-screen celebration, once. Preview it from Settings › Alerts.
+- **New logo**: a tighter orbit that shows both legs of the H, on the app, icons, the Android and iPhone apps, the desktop shortcuts and the images.
+
 ## 2.6.0 (2026-10-15)
 
 - **Mining economics** on Stats: what your Apollo earns, costs and (in winter) saves you in heat, **per day, in plain words**: *Your Apollo pays for itself right now*, or *It costs $0.58 a day more than it earns*. Every mode side by side, the break-even electricity price and bitcoin price, and the mode that earns the most right now.

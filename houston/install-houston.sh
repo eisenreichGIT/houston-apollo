@@ -22,6 +22,8 @@ SRC="$(cd "$(dirname "$0")" && pwd)"
 DEST=/opt/houston
 PORT=8088
 UNIT=/etc/systemd/system/houston.service
+UPD_PATH=/etc/systemd/system/houston-update.path
+UPD_UNIT=/etc/systemd/system/houston-update.service
 
 say()  { echo -e "${YELLOW}---> $*${NC}"; }
 ok()   { echo -e "${GREEN}---> $*${NC}"; }
@@ -50,7 +52,8 @@ remove_old_phone_page() {
 }
 
 if [[ $UNINSTALL == 1 ]]; then
-  systemctl disable --now houston >/dev/null 2>&1 || true
+  systemctl disable --now houston houston-update.path >/dev/null 2>&1 || true
+  rm -f "$UPD_PATH" "$UPD_UNIT"; rm -rf "$DEST.prev" "$DEST.failed"
   if command -v tailscale >/dev/null 2>&1; then tailscale serve --https=443 off >/dev/null 2>&1 || true; fi
   rm -f "$UNIT"; rm -rf "$DEST" /var/lib/houston /var/lib/private/houston
   remove_old_phone_page
@@ -62,7 +65,7 @@ fi
 # ---------------------------------------------------------------- checks
 command -v python3 >/dev/null 2>&1 || fail "python3 not found (Apollo OS includes it; is this the Apollo?)"
 python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 7) else 1)' || fail "Houston needs Python 3.7 or newer"
-for f in houston.py web/index.html web/manifest.json web/icon-192.png web/icon-512.png web/icon-maskable-512.png web/apple-touch-icon.png web/favicon.png web/logo.svg web/fonts/archivo.woff2 web/fonts/plex-mono-400.woff2 web/fonts/plex-mono-500.woff2 web/sw.js web/app.js web/theme.js; do
+for f in houston.py houston-update.sh web/index.html web/manifest.json web/icon-192.png web/icon-512.png web/icon-maskable-512.png web/apple-touch-icon.png web/favicon.png web/logo.svg web/fonts/archivo.woff2 web/fonts/plex-mono-400.woff2 web/fonts/plex-mono-500.woff2 web/sw.js web/app.js web/theme.js; do
   [[ -f "$SRC/$f" ]] || fail "Missing $f. Copy the whole houston folder to the Apollo, then run this again."
 done
 if ! curl -s --max-time 5 -o /dev/null http://127.0.0.1:5000/api/graphql 2>/dev/null; then
@@ -87,6 +90,7 @@ say "Installing Houston to $DEST"
 remove_old_phone_page
 mkdir -p "$DEST/web/fonts"
 install -m 0644 "$SRC/houston.py" "$DEST/houston.py"
+install -m 0755 "$SRC/houston-update.sh" "$DEST/houston-update.sh"
 install -m 0644 "$SRC"/web/index.html "$SRC"/web/manifest.json "$SRC"/web/logo.svg "$SRC"/web/sw.js "$SRC"/web/app.js "$SRC"/web/theme.js "$SRC"/web/*.png "$DEST/web/"
 install -m 0644 "$SRC"/web/fonts/*.woff2 "$SRC"/web/fonts/LICENSE.txt "$DEST/web/fonts/"
 chown -R root:root "$DEST"
@@ -146,8 +150,37 @@ SystemCallFilter=@system-service
 WantedBy=multi-user.target
 EOF
 
+# ---------------------------------------------------------------- one-tap updates
+# Houston (sandboxed, no privileges) asks for an update by leaving a version number in its own folder;
+# this root helper then downloads that release from GitHub itself, checks it and installs Houston's files.
+cat > "$UPD_PATH" <<EOF
+[Unit]
+Description=Houston update requests
+
+[Path]
+PathExists=/var/lib/private/houston/update-request
+PathExists=/var/lib/houston/update-request
+Unit=houston-update.service
+
+[Install]
+WantedBy=multi-user.target
+EOF
+cat > "$UPD_UNIT" <<EOF
+[Unit]
+Description=Houston one-tap updater (downloads the requested release from GitHub)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash $DEST/houston-update.sh
+ProtectHome=yes
+PrivateTmp=yes
+TimeoutStartSec=600
+EOF
+
 systemctl daemon-reload
 systemctl enable houston >/dev/null 2>&1
+systemctl enable --now houston-update.path >/dev/null 2>&1 || echo -e "${YELLOW}Note: one-tap updates couldn't be turned on; re-run this installer for updates.${NC}"
 systemctl restart houston
 
 say "Starting Houston"

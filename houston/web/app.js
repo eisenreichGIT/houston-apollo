@@ -227,7 +227,7 @@
     if (id === 'stats') { loadStats(); statsTimer = setInterval(() => { if (!document.hidden) loadStats(true); }, 60000); }
     if (id === 'schedule') { loadSchedule(); $('apBanner').classList.toggle('hidden', !(settings && settings.econ && settings.econ.autopilot && settings.econ.autopilot.mode === 'run')); }
     if (id === 'activity') { if (opts && opts.pane) actPane = opts.pane; showPane(); }
-    if (id === 'settings') renderSettings();
+    if (id === 'settings') { renderSettings(); loadHou(false); }
   }
 
   // ---------------------------------------------------------------- sign in / out
@@ -252,7 +252,10 @@
         : act === 'node_stop' ? 'Stop the Bitcoin node' : act.startsWith('custom:') ? 'Set a custom target of ' + act.slice(7) + ' TH/s' : 'Switch to ' + modeName(act);
       if (!(await ask(what + '?', 'This link asks Houston to do that. Only continue if you opened it yourself.', 'Continue'))) act = null;
     }
-    go(pendingTab === 'logs' ? 'activity' : pendingTab || 'control', { force: true, pane: pendingTab === 'logs' ? 'logs' : null }); pendingTab = null;
+    const pt = pendingTab; pendingTab = null;
+    go(pt === 'logs' || pt === 'health' ? 'activity' : pt === 'report' ? 'stats' : pt || 'control', { force: true, pane: pt === 'logs' || pt === 'health' ? pt : null });
+    if (pt === 'report') setTimeout(() => $('reportSection').scrollIntoView({ block: 'start' }), 1500);
+    setTimeout(checkBlock, 2000);
     if (act === 'start' || act === 'stop') action(act);
     else if (act === 'node_start' || act === 'node_stop') nodeAction(act.slice(5));
     else if (act && MODE_INFO[act]) setMode(act);
@@ -835,6 +838,9 @@
     if (a === 'automation') return 'Shortcut key';
     if (a === 'update') return 'Apollo software';
     if (a === 'light') return 'Front status light';
+    if (a === 'block') return 'Block found';
+    if (a === 'houston_update') return 'Houston update';
+    if (a === 'report') return 'Monthly report';
     if (a.indexOf('start@') === 0) return 'Start mining in ' + modeName(a.slice(6));
     return modeName(a) + ' mode';
   }
@@ -845,7 +851,7 @@
       $('actEmpty').classList.toggle('hidden', items.length > 0);
       for (const it of items) {
         const a = String(it.action || '');
-        const kind = !it.ok ? 'fail' : a === 'alert' ? 'alert' : a === 'update' ? 'update' : a === 'light' ? 'light' : a === 'schedule' || a === 'automation' ? 'saved' : a.indexOf('node_') === 0 ? 'node' : a === 'stop' ? 'stop' : a.indexOf('start') === 0 ? 'start' : a === 'restart' ? 'restart' : 'mode';
+        const kind = !it.ok ? 'fail' : a === 'alert' || a === 'block' || a === 'report' ? 'alert' : a === 'update' || a === 'houston_update' ? 'update' : a === 'light' ? 'light' : a === 'schedule' || a === 'automation' ? 'saved' : a.indexOf('node_') === 0 ? 'node' : a === 'stop' ? 'stop' : a.indexOf('start') === 0 ? 'start' : a === 'restart' ? 'restart' : 'mode';
         const cls = { fail: 'b-stop', saved: 'b-info', stop: 'b-stop', start: 'b-start', restart: 'b-info', mode: 'b-mode', node: 'b-info', alert: 'b-mode', update: 'b-info', light: 'b-info' }[kind];
         const icon = kind === 'mode' ? modeIcon(a) : ICON[kind];
         const d = new Date(it.time);
@@ -994,8 +1000,10 @@
     setSeg($('actSeg'), 'pane', actPane);
     $('actPane').classList.toggle('hidden', actPane !== 'activity');
     $('logPane').classList.toggle('hidden', actPane !== 'logs');
+    $('healthPane').classList.toggle('hidden', actPane !== 'health');
     clearInterval(logTimer);
     if (actPane === 'activity') loadActivity();
+    else if (actPane === 'health') loadHealth();
     else {
       $('logSolo').classList.toggle('hidden', !node.solo);
       if (logType === 'CKPOOL' && !node.solo) logType = 'MINER';
@@ -1136,6 +1144,7 @@
     $('ntfyServer').value = a.server && a.server !== 'https://ntfy.sh' ? a.server : '';
     renderPeers(settings.apollos || []);
     renderEconSettings();
+    renderPoolSettings();
     renderAutomation();
     renderPush();
     $('abVer').textContent = device ? device.version : '–';
@@ -1694,6 +1703,9 @@
     const to = el('input', { class: 'input', type: 'time', value: p.to || '21:00', 'aria-label': 'Until' });
     const rate = el('input', { class: 'input', type: 'number', step: '0.001', min: '0', max: '10', inputmode: 'decimal', value: p.rate != null ? p.rate : '', placeholder: '0.12', 'aria-label': 'Price per kWh' });
     const row = el('div', { class: 'tou-row' }, sel, fr, to, rate, el('button', { class: 'linkbtn danger-link', type: 'button', 'aria-label': 'Remove this price', onclick: () => row.remove(), html: ICON.trash }));
+    const ms = (p.months || []).filter(m => m >= 1 && m <= 12);
+    row.dataset.months = ms.join(',');
+    if (ms.length && ms.length < 12) row.append(el('p', { class: 'tou-mo' }, 'Only in ' + monthsLabel(ms)));
     return row;
   }
   const AP_MODES = () => III ? ['super_eco', 'eco', 'balanced', 'turbo'] : ['whisper', 'eco', 'balanced', 'turbo'];
@@ -1727,7 +1739,7 @@
   function econPayload() {
     const tou = [...document.querySelectorAll('#touRows .tou-row')].map(r => {
       const [sel, fr, to, rate] = r.querySelectorAll('select, input');
-      return { days: TOU_DAYS[sel.value], from: fr.value, to: to.value, rate: rate.value.trim() };
+      return { days: TOU_DAYS[sel.value], from: fr.value, to: to.value, rate: rate.value.trim(), months: (r.dataset.months || '').split(',').filter(Boolean).map(Number) };
     });
     const t = $('heatType').value, bal = parseFloat($('heatBal').value);
     const modes = [...document.querySelectorAll('#apModes input')].filter(c => c.checked).map(c => c.dataset.m);
@@ -1753,8 +1765,380 @@
     const p = econPayload();
     if (p.heat.type !== 'none' && !p.heat.location) { toast('Add your ZIP code or town, so Houston knows when it\'s cold enough for the heat to count.', 'err'); return; }
     if (['gas', 'propane', 'oil'].includes(p.heat.type) && !p.heat.price) { toast('Add your fuel price.', 'err'); return; }
-    if (await saveSettings({ econ: p }, 'Mining economics saved.')) { econ = null; setTimeout(loadEcon, 2500); }
+    const pool = poolPayload();
+    if (pool.kind === 'ocean' && !pool.address) { toast('Add the bitcoin address OCEAN pays you at.', 'err'); return; }
+    if (pool.kind === 'braiins' && !pool.token && !(settings.pool && settings.pool.secretSaved)) { toast('Add a read-only Braiins Pool API token.', 'err'); return; }
+    if (await saveSettings({ econ: p, pool }, 'Mining economics saved.')) { econ = null; setTimeout(loadEcon, 2500); }
   });
+
+  // ---------------------------------------------------------------- monthly report (Stats)
+  let report = null, repMonth = null;
+  const thisMonth = () => { const d = new Date(); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); };
+  const MONTHS_FMT = m => new Date(+m.slice(0, 4), +m.slice(5) - 1, 1).toLocaleDateString([], { month: 'long', year: 'numeric' });
+  async function loadReport(month) {
+    if (!settings) return;
+    try { report = await rest('GET', 'api/report' + (month ? '?month=' + encodeURIComponent(month) : '')); }
+    catch (e) { if (handleAuthError(e)) return; report = null; }
+    renderReport();
+  }
+  function renderReport() {
+    const sec = $('reportSection');
+    if (!report || !report.days) { sec.classList.toggle('hidden', !report); if (!report) return; }
+    sec.classList.remove('hidden');
+    const r = report, t = r.totals;
+    repMonth = r.month;
+    $('repMonth').textContent = MONTHS_FMT(r.month);
+    const i = r.months.indexOf(r.month);
+    $('repPrev').disabled = i < 0 || i >= r.months.length - 1;
+    $('repNext').disabled = i <= 0;
+    const net = $('repNet');
+    if (!r.days) {
+      net.textContent = '–'; net.className = '';
+      $('repNetLbl').textContent = 'no readings this month';
+      $('repSplit').textContent = ''; $('chRepDays').textContent = ''; $('repKv').textContent = '';
+      $('repNote').textContent = 'Houston adds up each day as it goes, from the day 2.7.0 was installed.';
+      $('repCsv').classList.add('hidden');
+      return;
+    }
+    $('repCsv').classList.toggle('hidden', IN_APP);
+    net.textContent = fmtSigned(t.net); net.className = t.net >= 0 ? 'pos' : 'neg';
+    $('repNetLbl').textContent = 'net' + (r.partial && r.month === thisMonth() ? ' so far' : '') + (r.prev ? ' · ' + MONTHS_FMT(r.prev.month).split(' ')[0] + ' ' + fmtSigned(r.prev.net) : '');
+    const sp = $('repSplit'); sp.textContent = '';
+    sp.append(el('div', {}, el('b', {}, fmtMoney(t.earned)), el('span', {}, 'earned · ' + t.sats.toLocaleString() + ' sats')),
+      el('div', {}, el('b', {}, fmtMoney(t.cost)), el('span', {}, 'electricity · ' + t.kwh.toLocaleString() + ' kWh')),
+      el('div', {}, el('b', {}, t.heat ? fmtMoney(t.heat) : '–'), el('span', {}, t.heat ? 'heat it saved' : 'heat (not counted)')));
+    drawRepDays($('chRepDays'), r);
+    const kv = $('repKv'); kv.textContent = '';
+    const add = (k, v) => kv.append(el('div', {}, el('span', {}, k), el('b', {}, v)));
+    add('Mining', t.uptime != null ? Math.round(t.uptime * 100) + '% of the time' : '–');
+    add('Average hashrate', t.ths != null ? t.ths.toFixed(2) + ' TH/s' : '–');
+    add('Hottest hashboard', t.tbMax != null ? fmtTemp(t.tbMax) : '–');
+    const modes = Object.entries(t.modes || {});
+    add('Most time in', modes.length ? modeName(modes[0][0]) + ' (' + Math.round(modes[0][1]) + ' h)' : '–');
+    add('Mode changes', String(r.switches || 0) + (r.alerts ? ' · ' + r.alerts + ' alert' + (r.alerts === 1 ? '' : 's') : ''));
+    if (t.best) add('Best share', fmtBig(t.best));
+    if (r.pool && r.pool.sats != null) add(r.pool.name + ' paid', r.pool.sats.toLocaleString() + ' sats' + (r.pool.ratio != null ? ' (' + Math.round(r.pool.ratio * 100) + '%)' : ''));
+    if (r.blocks && r.blocks.length) add('Blocks found', String(r.blocks.length) + ' 🎉');
+    const notes = [];
+    if (r.partial) notes.push(r.days + ' of ' + (r.month === thisMonth() ? r.elapsed : r.daysInMonth) + ' days with readings.');
+    if (r.estimated) notes.push('Days before ' + (r.since || '2.7.0') + ' are estimates from Houston\'s 7-day history, priced at that time\'s network numbers.');
+    notes.push('Earnings are the expected value at each moment\'s difficulty and bitcoin price' + (settings.econ && settings.econ.poolFee ? ', minus your ' + settings.econ.poolFee + '% pool fee' : '') + '.');
+    $('repNote').textContent = notes.join(' ');
+  }
+  function fmtBig(n) {
+    const u = [['T', 1e12], ['G', 1e9], ['M', 1e6], ['k', 1e3]].find(x => n >= x[1]);
+    return u ? (n / u[1]).toFixed(n / u[1] >= 100 ? 0 : 1) + u[0] : String(Math.round(n));
+  }
+  function drawRepDays(host, r) {
+    host.textContent = '';
+    const days = r.series;
+    if (!days.length) return;
+    const W = Math.max(260, host.clientWidth || 320), H = 150, L = 46, R = 8, T = 10, B = 22;
+    const n = r.daysInMonth, vals = days.map(d => d.net);
+    let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    if (hi - lo < 1e-6) hi = lo + 0.1;
+    const ticks = niceTicks(lo, hi, 4); lo = ticks[0]; hi = ticks[ticks.length - 1];
+    const y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B), bw = (W - L - R) / n;
+    const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': host.getAttribute('aria-label') });
+    ticks.forEach(v => {
+      svg.append(sv('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), style: 'stroke:var(--line)', 'stroke-width': v === 0 ? 1.5 : 1 }));
+      const tx = sv('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 10.5 }); tx.textContent = fmtSigned(v, Math.abs(hi - lo) < 1 ? 2 : 1).replace(cur$(), ''); svg.append(tx);
+    });
+    days.forEach(d => {
+      const k = +d.d.slice(8) - 1, x = L + k * bw, top = Math.min(y(d.net), y(0)), ht = Math.max(1, Math.abs(y(d.net) - y(0)));
+      svg.append(sv('rect', { x: x + 1, y: top, width: Math.max(1, bw - 2), height: ht, rx: 1.5, style: 'fill:var(' + (d.net >= 0 ? '--ok-text' : '--danger-text') + ')' + (d.est ? ';opacity:.45' : '') }));
+    });
+    [1, 8, 15, 22, n].forEach(k => { const tx = sv('text', { x: L + (k - 0.5) * bw, y: H - 6, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 10.5 }); tx.textContent = String(k); svg.append(tx); });
+    host.append(svg);
+    const tip = el('div', { class: 'tip hidden' }); host.append(tip);
+    const hit = sv('rect', { x: L, y: 0, width: W - L - R, height: H - B, fill: 'transparent' }); svg.append(hit);
+    const show = ev => {
+      const rc = svg.getBoundingClientRect(), k = Math.floor(((ev.clientX - rc.left) / rc.width * W - L) / bw) + 1;
+      const d = days.find(x => +x.d.slice(8) === k);
+      if (!d) { tip.classList.add('hidden'); return; }
+      tip.textContent = '';
+      tip.append(el('div', { class: 'tt' }, new Date(d.d + 'T12:00').toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }) + (d.est ? ' · estimate' : '')),
+        el('div', { class: 'row' }, el('b', {}, fmtSigned(d.net)), ' net'),
+        el('div', { class: 'row' }, 'Earned ' + fmtMoney(d.earned) + ' · power ' + fmtMoney(d.cost) + (d.heat ? ' · heat ' + fmtMoney(d.heat) : '')));
+      tip.classList.remove('hidden');
+      const tw = tip.offsetWidth, px = (L + (k - 0.5) * bw) / W * host.clientWidth;
+      tip.style.left = Math.min(host.clientWidth - tw, Math.max(0, px - tw / 2)) + 'px'; tip.style.top = '-6px'; tip.style.transform = 'translateY(-100%)';
+    };
+    hit.addEventListener('pointermove', show); hit.addEventListener('pointerdown', show);
+    hit.addEventListener('pointerleave', () => tip.classList.add('hidden'));
+  }
+  $('repPrev').addEventListener('click', () => { const i = report.months.indexOf(repMonth); if (i < report.months.length - 1) loadReport(report.months[i + 1]); });
+  $('repNext').addEventListener('click', () => { const i = report.months.indexOf(repMonth); if (i > 0) loadReport(report.months[i - 1]); });
+  $('repCsv').addEventListener('click', () => {
+    if (!report) return;
+    const cur = report.fiat || 'USD';
+    const rows = [['date', 'kWh', 'electricity ' + cur, 'heat saved ' + cur, 'earned ' + cur, 'earned sats', 'net ' + cur, 'mining %', 'estimate']]
+      .concat(report.series.map(d => [d.d, d.kwh, d.cost, d.heat, d.earned, d.sats, d.net, d.uptime != null ? Math.round(d.uptime * 100) : '', d.est ? 'yes' : '']));
+    const blob = new Blob([rows.map(r => r.join(',')).join('\n') + '\n'], { type: 'text/csv' });
+    const a = el('a', { href: URL.createObjectURL(blob), download: 'houston-' + report.month + '.csv' });
+    document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  });
+
+  // ---------------------------------------------------------------- pool payouts (Stats)
+  async function loadPool() {
+    const kind = settings && settings.pool ? settings.pool.kind : 'none';
+    $('poolSetup').classList.toggle('hidden', kind !== 'none');
+    if (kind === 'none') { $('poolCard').classList.add('hidden'); return; }
+    let p;
+    try { p = await rest('GET', 'api/pool'); } catch (e) { if (handleAuthError(e)) return; return; }
+    const card = $('poolCard'); card.classList.remove('hidden');
+    $('poolName').textContent = p.name || '';
+    const kv = $('poolKv'); kv.textContent = ''; $('chPool').textContent = ''; $('poolLegend').textContent = '';
+    if (p.waiting || p.error && !p.series) {
+      $('poolRatio').textContent = '–'; $('poolRatio').className = '';
+      $('poolRatioLbl').textContent = p.error ? 'couldn\'t read your pool' : 'loading your pool\'s numbers…';
+      $('poolNote').textContent = p.error ? 'Error: ' + p.error : 'Houston checks your pool once an hour.';
+      return;
+    }
+    const ratio = p.ratio;
+    $('poolRatio').textContent = ratio != null ? Math.round(ratio * 100) + '%' : '–';
+    $('poolRatio').className = ratio == null ? '' : ratio >= 0.9 ? 'pos' : ratio < 0.7 ? 'neg' : '';
+    $('poolRatioLbl').textContent = ratio != null ? 'of what Houston expected · ' + p.daysCompared + ' days' : 'not enough days to compare yet';
+    drawPool($('chPool'), p.series);
+    $('poolLegend').append(el('span', {}, el('i', { style: 'background:var(--btc)' }), 'Paid by the pool'), el('span', {}, el('i', { class: 'ln', style: 'background:var(--text)' }), 'Houston expected'));
+    const add = (k, v) => kv.append(el('div', {}, el('span', {}, k), el('b', {}, v)));
+    add('Last 30 days', (p.paid30 || 0).toLocaleString() + ' sats');
+    add('Expected', (p.expected30 || 0).toLocaleString() + ' sats');
+    if (p.unpaid != null) add('Waiting to be paid', p.unpaid.toLocaleString() + ' sats');
+    if (p.payouts && p.payouts.length) add('Last payout', p.payouts[0].sats.toLocaleString() + ' sats, ' + new Date(p.payouts[0].t * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' }));
+    if (p.poolThs) add('Hashrate the pool sees', p.poolThs.toFixed(2) + ' TH/s' + (p.houstonThs ? ' (Apollo: ' + p.houstonThs.toFixed(2) + ')' : ''));
+    $('poolNote').textContent = (p.kind === 'ocean' ? 'OCEAN pays per block the pool finds (TIDES), so single days swing a lot; 30 days evens it out. ' : 'Braiins Pool credits rewards per day (UTC). ')
+      + 'Below 100% can be luck, stale or rejected shares, or a fee Houston doesn\'t know about (set it under Mining economics › More).' + (p.error ? ' Last update failed: ' + p.error : '');
+  }
+  function drawPool(host, series) {
+    host.textContent = '';
+    const W = Math.max(260, host.clientWidth || 320), H = 140, L = 46, R = 8, T = 10, B = 22;
+    const hi0 = Math.max(1, ...series.map(d => Math.max(d.paid || 0, d.expected || 0)));
+    const ticks = niceTicks(0, hi0, 3), hi = ticks[ticks.length - 1];
+    const y = v => T + (1 - v / hi) * (H - T - B), bw = (W - L - R) / series.length;
+    const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': host.getAttribute('aria-label') });
+    ticks.forEach(v => {
+      svg.append(sv('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), style: 'stroke:var(--line)' }));
+      const tx = sv('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 10.5 }); tx.textContent = fmtBig(v); svg.append(tx);
+    });
+    series.forEach((d, i) => { if (d.paid) svg.append(sv('rect', { x: L + i * bw + 1, y: y(d.paid), width: Math.max(1, bw - 2), height: Math.max(1, y(0) - y(d.paid)), rx: 1.5, style: 'fill:var(--btc)' })); });
+    const pts = series.map((d, i) => d.expected != null ? [L + (i + 0.5) * bw, y(d.expected)] : null);
+    let dpath = '', pen = false;
+    pts.forEach(p => { if (!p) { pen = false; return; } dpath += (pen ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1); pen = true; });
+    if (dpath) svg.append(sv('path', { d: dpath, fill: 'none', style: 'stroke:var(--text)', 'stroke-width': 1.75, 'stroke-linejoin': 'round' }));
+    [0, series.length - 1].forEach(i => { const tx = sv('text', { x: L + (i + 0.5) * bw, y: H - 6, 'text-anchor': i ? 'end' : 'start', style: 'fill:var(--muted)', 'font-size': 10.5 }); tx.textContent = new Date(series[i].d + 'T12:00').toLocaleDateString([], { month: 'short', day: 'numeric' }); svg.append(tx); });
+    host.append(svg);
+  }
+
+  // ---------------------------------------------------------------- pool + rate lookup (Settings)
+  function poolFields() {
+    const k = $('poolKind').value;
+    document.querySelectorAll('.pool-f').forEach(f => f.classList.toggle('hidden', f.dataset.for !== k));
+  }
+  $('poolKind').addEventListener('change', poolFields);
+  function renderPoolSettings() {
+    const p = settings.pool || { kind: 'none' };
+    $('poolKind').value = p.kind || 'none';
+    $('poolAddr').value = p.address || '';
+    $('poolToken').value = '';
+    $('poolToken').placeholder = p.secretSaved ? 'Saved (type a new one to replace it)' : '';
+    poolFields();
+    const u = settings.utility || {};
+    $('openeiKey').value = ''; $('openeiState').textContent = u.hasKey ? 'Saved' : 'Not set: uses the shared demo key';
+  }
+  function poolPayload() {
+    const k = $('poolKind').value, out = { kind: k };
+    if (k === 'ocean') out.address = $('poolAddr').value.trim();
+    if (k === 'braiins' && $('poolToken').value.trim()) out.token = $('poolToken').value.trim();
+    return out;
+  }
+  $('rateLookup').addEventListener('click', () => {
+    const pn = $('ratePanel'); pn.classList.toggle('hidden');
+    if (!pn.classList.contains('hidden') && !$('rateZip').value) {
+      const loc = (settings.econ && settings.econ.heat && settings.econ.heat.location) || '';
+      if (/^\d{5}$/.test(loc)) $('rateZip').value = loc;
+      $('rateZip').focus();
+    }
+  });
+  const cents = r => (r * 100).toFixed(r * 100 < 10 ? 2 : 1) + '¢';
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function monthsLabel(ms) {
+    if (!ms || !ms.length || ms.length === 12) return '';
+    const runs = []; let a = ms[0], b = ms[0];
+    for (let i = 1; i <= ms.length; i++) { if (ms[i] === b + 1) b = ms[i]; else { runs.push(a === b ? MON[a - 1] : MON[a - 1] + '–' + MON[b - 1]); a = b = ms[i]; } }
+    return runs.join(', ');
+  }
+  function planText(p) {
+    const parts = [cents(p.flat) + '/kWh' + (p.tou.length ? ' most hours' : '')];
+    if (p.tou.length) parts.push(p.tou.length + ' time-of-use price' + (p.tou.length > 1 ? 's' : '') + ' (' + [...new Set(p.tou.map(t => cents(t.rate)))].join(', ') + ')' + (p.seasonal ? ', by season' : ''));
+    if (p.tiers) parts.push('first-tier price');
+    if (p.fixed) parts.push('plus ' + cur$() + p.fixed.toFixed(2) + ' ' + String(p.fixedUnit || '').replace('$/', 'per ') + ' fixed (not counted)');
+    return parts.join(' · ');
+  }
+  $('rateSearch').addEventListener('click', async () => {
+    const zip = $('rateZip').value.trim(), ul = $('ratePlans');
+    if (!/^\d{5}$/.test(zip)) { toast('Enter a 5-digit ZIP code.', 'err'); return; }
+    ul.textContent = ''; ul.append(el('li', {}, el('span', { class: 'd' }, 'Searching…')));
+    try {
+      const j = await rest('GET', 'api/rates?zip=' + zip);
+      ul.textContent = '';
+      if (!j.plans.length) { ul.append(el('li', {}, el('span', { class: 'd' }, 'No residential plans found for ' + zip + '. Enter your price from your bill instead.'))); return; }
+      j.plans.forEach(p => ul.append(el('li', {},
+        el('b', {}, p.name), el('button', { class: 'secondary small', type: 'button', onclick: () => usePlan(p) }, 'Use this'),
+        el('span', { class: 'd' }, p.utility + ' · ' + planText(p) + ' · ', p.uri && /^https:\/\//.test(p.uri) ? el('a', { href: p.uri, target: '_blank', rel: 'noopener noreferrer' }, 'details ↗') : ''),
+        p.note ? el('span', { class: 'd' }, p.note) : '')));
+    } catch (e) { if (handleAuthError(e)) return; ul.textContent = ''; ul.append(el('li', {}, el('span', { class: 'd' }, e.message))); }
+  });
+  async function usePlan(p) {
+    const has = settings.econ && settings.econ.tou && settings.econ.tou.length;
+    const ok = await ask('Use “' + p.name + '”?', 'Your price per kWh becomes ' + cents(p.flat) + (p.tou.length ? ', with ' + p.tou.length + ' time-of-use price' + (p.tou.length > 1 ? 's' : '') : '') + (has ? '. This replaces your current time-of-use prices.' : '.') + ' You can change any of it afterwards.', 'Use it');
+    if (!ok) return;
+    if (await saveSettings({ rate: p.flat, econ: { tou: p.tou } }, 'Electricity prices from “' + p.name + '” saved.')) { $('ratePanel').classList.add('hidden'); econ = null; }
+  }
+  $('saveKey').addEventListener('click', () => saveSettings({ utility: { key: $('openeiKey').value.trim() } }, $('openeiKey').value.trim() ? 'OpenEI key saved.' : 'OpenEI key removed.'));
+
+  // ---------------------------------------------------------------- health check (Activity)
+  let health = null;
+  async function loadHealth() {
+    $('healthSum').textContent = ''; $('healthSum').append(el('span', {}, 'Checking…'));
+    try { health = await rest('GET', 'api/health'); } catch (e) { if (handleAuthError(e)) return; toast(e.message, 'err'); return; }
+    const sum = $('healthSum'); sum.textContent = '';
+    const s = health.summary;
+    if (!s.fail && !s.warn) sum.append(el('span', { style: 'color:var(--ok-text);border-color:var(--ok-text)' }, 'All good'));
+    if (s.fail) sum.append(el('span', { style: 'color:var(--danger-text);border-color:var(--danger-text)' }, s.fail + ' problem' + (s.fail > 1 ? 's' : '')));
+    if (s.warn) sum.append(el('span', {}, s.warn + ' to look at'));
+    sum.append(el('span', {}, s.ok + ' OK'));
+    const box = $('healthList'); box.textContent = '';
+    const groups = [...new Set(health.checks.map(c => c.group))];
+    const mark = { ok: '✓', warn: '!', fail: '×', off: '–' };
+    groups.forEach(g => {
+      box.append(el('div', { class: 'hc-group' }, g));
+      const ul = el('ul', { class: 'hc' });
+      health.checks.filter(c => c.group === g).forEach(c => ul.append(el('li', { class: c.state },
+        el('span', { class: 'ic', 'aria-label': c.state }, mark[c.state] || '?'),
+        el('div', {}, el('b', {}, c.label), ' ', el('span', { class: 'd' }, c.detail)),
+        c.fix && c.state !== 'ok' ? el('div', { class: 'fx' }, c.fix) : '')));
+      box.append(ul);
+    });
+  }
+  $('healthRun').addEventListener('click', loadHealth);
+  $('houHealth').addEventListener('click', () => go('activity', { pane: 'health' }));
+  $('healthCopy').addEventListener('click', async () => {
+    if (!health) return;
+    const lines = ['Houston ' + health.version + ' health check, ' + new Date(health.at * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' UTC',
+      'Apollo: ' + (III ? 'Apollo III' : 'Apollo II')].concat(health.checks.map(c => '[' + c.state.toUpperCase() + '] ' + c.group + ' / ' + c.label + ': ' + c.detail));
+    const text = lines.join('\n').replace(/\b\d{1,3}(\.\d{1,3}){3}\b/g, 'x.x.x.x');
+    try { await navigator.clipboard.writeText(text); toast('Report copied.', 'ok'); }
+    catch (e) { const pre = el('pre', { style: 'white-space:pre-wrap;font-size:12px;user-select:all' }, text); $('healthList').prepend(pre); toast('Select the report text and copy it.'); }
+  });
+
+  // ---------------------------------------------------------------- Houston updates (Settings)
+  let hou = null, houTimer = null, houWas = false, houFrom = null;
+  async function loadHou(check) {
+    clearTimeout(houTimer);
+    try {
+      hou = await rest('GET', 'api/houston-update' + (check ? '?check=1' : ''));
+      if (houFrom && hou.current !== houFrom) {         // a new Houston answered: load its page
+        toast('Houston ' + hou.current + ' is installed. Reloading…', 'ok', 4000);
+        setTimeout(() => location.reload(), 1500); return;
+      }
+      if (check) toast(hou.error ? 'Couldn\'t check GitHub: ' + hou.error : hou.available ? 'Houston ' + hou.latest + ' is available!' : 'Houston is up to date.', hou.error ? 'err' : hou.available ? '' : 'ok');
+    } catch (e) {
+      if (handleAuthError(e)) return;
+      if (!houWas && check) toast(e.message, 'err');
+    }
+    renderHou();
+    const st = hou && hou.status && hou.status.state;
+    houWas = !!houFrom && st !== 'failed';
+    if (houWas) houTimer = setTimeout(() => loadHou(false), 3000);
+    if (st === 'failed' && houFrom) { houFrom = null; toast(hou.status.message || 'The Houston update failed.', 'err', 12000); }
+  }
+  function renderHou() {
+    const h = hou;
+    $('houVer').textContent = device ? device.version : (h ? h.current : '–');
+    const st = h && h.status && h.status.state;
+    const running = !!houFrom && st !== 'failed';
+    let text = 'Checking…';
+    if (running) text = { requested: 'Waiting for the updater…', downloading: 'Downloading from GitHub…', installing: 'Installing…', restarting: 'Restarting Houston…', done: 'Done' }[st] || 'Restarting Houston…';
+    else if (h) text = h.available ? 'Houston ' + h.latest + ' is available!' + (h.ready ? '' : ' Run the installer once more to update with one tap.')
+      : h.latest ? 'Up to date' : h.error ? 'Couldn\'t check GitHub for updates' : 'Up to date';
+    if (!running && st === 'failed' && h.status.message) text += ' · Last update failed: ' + h.status.message;
+    $('houSub').textContent = text;
+    $('houBtn').classList.toggle('hidden', !(h && h.available && h.ready) || running);
+    $('houBtn').textContent = h && h.available ? 'Update to ' + h.latest : 'Update';
+    $('houProg').classList.toggle('hidden', !running);
+    $('houBar').style.width = running ? ({ requested: 10, downloading: 35, installing: 65, restarting: 90, done: 100 }[st] || 90) + '%' : '0';
+    $('houNote').textContent = 'Mining isn\'t affected: only Houston restarts (about a minute). If the new version doesn\'t start, the updater puts this one back.';
+    $('houNotesBox').classList.toggle('hidden', !(h && h.available && h.notes));
+    $('houNotes').textContent = h && h.notes ? h.notes : '';
+    $('houCheck').classList.toggle('hidden', running);
+  }
+  $('houCheck').addEventListener('click', () => { $('houSub').textContent = 'Checking…'; loadHou(true); });
+  $('houBtn').addEventListener('click', async () => {
+    if (!hou || !hou.available) return;
+    if (!(await ask('Update Houston to ' + hou.latest + '?', 'Your Apollo downloads Houston ' + hou.latest + ' from GitHub and restarts Houston (about a minute). Mining and your schedule aren\'t affected. If it doesn\'t start, the previous version comes back by itself.', 'Update now'))) return;
+    $('houBtn').disabled = true;
+    try {
+      const j = await rest('POST', 'api/houston-update', { version: hou.latest });
+      hou = j.update; houFrom = hou.current; houWas = true;
+      toast('Updating Houston…', '', 6000);
+    } catch (e) { if (!handleAuthError(e)) toast(e.message, 'err'); }
+    finally { $('houBtn').disabled = false; }
+    renderHou();
+    clearTimeout(houTimer); houTimer = setTimeout(() => loadHou(false), 2500);
+  });
+
+  // ---------------------------------------------------------------- block found celebration
+  const SEEN_KEY = 'houstonBlockSeen';
+  const seenGet = () => { try { return localStorage.getItem(SEEN_KEY); } catch (e) { return null; } };
+  const seenSet = v => { try { localStorage.setItem(SEEN_KEY, String(v)); } catch (e) {} };
+  let partyRaf = null;
+  async function checkBlock() {
+    if (!token || document.hidden) return;
+    try {
+      const r = await fetch('api/glance', { cache: 'no-store' });
+      const b = r.ok ? (await r.json()).block : null;
+      if (!b || !b.id) return;
+      const seen = seenGet();
+      if (String(b.id) === seen) return;
+      if (!seen && Date.now() / 1000 - b.at > 7 * 86400) { seenSet(b.id); return; }   // an old block on a new device
+      seenSet(b.id);
+      celebrate(b);
+    } catch (e) {}
+  }
+  function celebrate(b, preview) {
+    const p = $('party');
+    $('partyCoin').innerHTML = ICON.btc;            // constant icon markup only
+    $('partyTitle').textContent = preview ? 'This is what a block looks like' : 'Your Apollo found a block!';
+    $('partyText').textContent = preview ? 'If your solo pool finds a block, every device with Houston open shows this, once.'
+      : (b && b.height ? 'Block ' + Number(b.height).toLocaleString() + ' · ' : '') + (b ? new Date(b.at * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '') + '. Check your wallet and the Apollo dashboard.';
+    p.classList.remove('hidden');
+    $('partyClose').focus();
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const cv = $('partyCanvas'), ctx = cv.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const colors = ['#F7931A', '#F9A13A', '#FFD27A', '#F4F1EA', '#22B39C', '#4D8FEA'];
+    const bits = Array.from({ length: reduce ? 0 : 160 }, () => ({ x: Math.random() * innerWidth, y: -20 - Math.random() * innerHeight, vx: (Math.random() - .5) * 2, vy: 2 + Math.random() * 3,
+      r: 4 + Math.random() * 6, a: Math.random() * 6.28, va: (Math.random() - .5) * .2, c: colors[Math.floor(Math.random() * colors.length)] }));
+    const t0 = performance.now();
+    cancelAnimationFrame(partyRaf);
+    const frame = t => {
+      ctx.clearRect(0, 0, innerWidth, innerHeight);
+      bits.forEach(q => {
+        q.x += q.vx; q.y += q.vy; q.a += q.va;
+        if (q.y > innerHeight + 20 && t - t0 < 6000) { q.y = -20; q.x = Math.random() * innerWidth; }
+        ctx.save(); ctx.translate(q.x, q.y); ctx.rotate(q.a); ctx.fillStyle = q.c; ctx.fillRect(-q.r / 2, -q.r / 4, q.r, q.r / 2); ctx.restore();
+      });
+      if (t - t0 < 9000 && !p.classList.contains('hidden')) partyRaf = requestAnimationFrame(frame);
+    };
+    if (bits.length) partyRaf = requestAnimationFrame(frame);
+  }
+  $('partyClose').addEventListener('click', () => { $('party').classList.add('hidden'); cancelAnimationFrame(partyRaf); });
+  $('party').addEventListener('keydown', ev => { if (ev.key === 'Escape') $('partyClose').click(); });
+  $('partyPreview').addEventListener('click', () => celebrate(null, true));
+  setInterval(checkBlock, 60000);
 
   // ---------------------------------------------------------------- your other Apollos
   async function loadFleet() {
@@ -1789,7 +2173,7 @@
       drawTiles(); drawCharts(); drawEnergy(); drawSystem();
     } catch (e) { if (!handleAuthError(e) && !quiet) toast(e.message, 'err'); }
     document.querySelectorAll('#view-stats .chart').forEach(c => c.style.opacity = 1);
-    loadNodeStats(); loadPriceChart(); loadMarket(); loadEcon();
+    loadNodeStats(); loadPriceChart(); loadMarket(); loadEcon(); loadReport(repMonth); loadPool();
   }
 
   async function loadPriceChart() {
@@ -2100,7 +2484,7 @@
   const hash = location.hash.slice(1).toLowerCase().replace(/-/g, '_').replace(/^supereco$/, 'super_eco');
   const hm = hash.match(/^custom_?(\d{1,2})$/);
   let pendingAction = ['start', 'stop', 'super_eco', 'whisper', 'eco', 'balanced', 'turbo', 'node_start', 'node_stop'].includes(hash) ? hash : (hm ? 'custom:' + hm[1] : null);
-  let pendingTab = ['schedule', 'activity', 'logs'].includes(hash) ? hash : null;
+  let pendingTab = ['schedule', 'activity', 'logs', 'health', 'report', 'stats', 'settings'].includes(hash) ? hash : null;
   if (hash) history.replaceState(null, '', location.pathname + location.search);
 
   window.addEventListener('beforeunload', e => { if (isDirty()) { e.preventDefault(); e.returnValue = ''; } });

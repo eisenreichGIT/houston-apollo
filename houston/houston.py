@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 HERE = os.path.dirname(os.path.realpath(__file__))
 WEB_DIR = os.path.realpath(os.environ.get("HOUSTON_WEB", os.path.join(HERE, "web")))
 STATE_DIR = os.environ.get("STATE_DIRECTORY") or os.environ.get("HOUSTON_STATE") or os.path.join(HERE, "state")
@@ -531,12 +531,14 @@ def default_settings():
         "currency": "$",
         "alerts": {"enabled": False, "server": "https://ntfy.sh", "topic": "",
                    "offline": True, "hot": True, "hotC": 80, "hashrate": True, "node": True, "disk": True, "block": True,
-                   "update": True, "econ": True},
+                   "update": True, "econ": True, "report": True},
         "apollos": [],                # other Apollos: [{"name": "Garage", "host": "192.168.1.51"}]
         "automation": {"key": None},  # key for Siri Shortcuts / HTTP Shortcuts (see /api/v1/...)
         "price": {"enabled": True, "fiat": "USD"},   # bitcoin price ticker
         "market": {"enabled": True},                 # network, market and news cards on Stats
         "econ": econ_defaults(),                     # mining economics, time-of-use prices, heat, autopilot
+        "pool": {"kind": "none", "address": "", "token": ""},   # pool payouts: OCEAN (address) or Braiins Pool (token)
+        "utility": {"key": ""},                      # optional OpenEI key for the utility rate lookup
     }
 
 
@@ -550,7 +552,7 @@ def get_settings():
                     s["econ"][kk].update(vv)
                 elif kk in s["econ"]:
                     s["econ"][kk] = vv
-        elif k in ("alerts", "automation", "price", "market") and isinstance(v, dict):
+        elif k in ("alerts", "automation", "price", "market", "pool", "utility") and isinstance(v, dict):
             s[k].update(v)
         elif k in s:
             s[k] = v
@@ -585,7 +587,7 @@ def validate_settings(new, current):
         a = new["alerts"]
         if not isinstance(a, dict):
             raise ValueError("alerts must be an object")
-        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block", "update", "econ"):
+        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block", "update", "econ", "report"):
             if k in a:
                 s["alerts"][k] = bool(a[k])
         if "server" in a:
@@ -626,6 +628,41 @@ def validate_settings(new, current):
             s["market"]["enabled"] = bool(mk["enabled"])
     if "econ" in new:
         validate_econ(new["econ"], s["econ"])
+    if "pool" in new:
+        p = new["pool"]
+        if not isinstance(p, dict):
+            raise ValueError("pool must be an object")
+        if "kind" in p:
+            if p["kind"] not in POOL_KINDS:
+                raise ValueError("pool must be none, ocean or braiins")
+            s["pool"]["kind"] = p["kind"]
+        if "address" in p:
+            a = str(p["address"] or "").strip()
+            a = a.lower() if a.lower().startswith("bc1") else a
+            if a and not ADDR_RE.match(a):
+                raise ValueError("that doesn't look like a bitcoin address (bc1…, 1… or 3…)")
+            s["pool"]["address"] = a
+        if p.get("token"):                       # empty = keep the saved token; "clear" removes it
+            t = str(p["token"]).strip()
+            if t == "clear":
+                s["pool"]["token"] = ""
+            elif not POOL_TOKEN_RE.match(t):
+                raise ValueError("that doesn't look like a Braiins Pool API token")
+            else:
+                s["pool"]["token"] = t
+        if s["pool"]["kind"] == "ocean" and not s["pool"]["address"]:
+            raise ValueError("add the bitcoin address OCEAN pays you at")
+        if s["pool"]["kind"] == "braiins" and not s["pool"]["token"]:
+            raise ValueError("add a Braiins Pool API token (read-only)")
+    if "utility" in new:
+        u = new["utility"]
+        if not isinstance(u, dict):
+            raise ValueError("utility must be an object")
+        if "key" in u:
+            k = str(u["key"] or "").strip()
+            if k and not re.match(r"^[A-Za-z0-9]{20,64}$", k):
+                raise ValueError("that doesn't look like an OpenEI API key")
+            s["utility"]["key"] = k
     if "apollos" in new:
         lst = new["apollos"]
         if not isinstance(lst, list) or len(lst) > 20:
@@ -664,8 +701,8 @@ def validate_econ(e, cur):
         cur["enabled"] = bool(e["enabled"])
     if "tou" in e:
         lst = e["tou"]
-        if not isinstance(lst, list) or len(lst) > 12:
-            raise ValueError("up to 12 time-of-use periods")
+        if not isinstance(lst, list) or len(lst) > 24:
+            raise ValueError("up to 24 time-of-use periods")
         out = []
         for p in lst:
             if not isinstance(p, dict):
@@ -676,7 +713,9 @@ def validate_econ(e, cur):
             fr, to = str(p.get("from", "")), str(p.get("to", ""))
             if not (TIME_RE.match(fr) and TIME_RE.match(to)) or fr == to:
                 raise ValueError("time-of-use times must be like 07:00 and 21:00 (and different)")
-            out.append({"days": days, "from": fr, "to": to, "rate": round(_num(p.get("rate"), "time-of-use price", 0, 10), 4)})
+            months = sorted({int(m) for m in (p.get("months") or []) if str(m).isdigit() and 1 <= int(m) <= 12})
+            out.append({"days": days, "from": fr, "to": to, "rate": round(_num(p.get("rate"), "time-of-use price", 0, 10), 5),
+                        "months": [] if len(months) == 12 else months})
         cur["tou"] = out
     if "extraW" in e:
         cur["extraW"] = round(_num(e["extraW"], "extra watts", 0, 200))
@@ -725,6 +764,8 @@ def public_settings(s):
     """Settings as the app sees them (the automation key is only shown when asked for)."""
     out = json.loads(json.dumps(s))
     out["automation"] = {"enabled": bool(s["automation"].get("key"))}
+    out["pool"] = {"kind": s["pool"].get("kind", "none"), "address": s["pool"].get("address", ""), "secretSaved": bool(s["pool"].get("token"))}
+    out["utility"] = {"hasKey": bool((s.get("utility") or {}).get("key"))}
     return out
 
 
@@ -785,6 +826,10 @@ def save_history():
         data = list(_history)
         _hist_dirty[0] = 0
     write_json(HISTORY_FILE, data, compact=True)
+    try:
+        daily_save()
+    except Exception as e:
+        log("daily totals not saved: %s" % e)
 
 
 def hashrate_ghs(stats):
@@ -822,6 +867,7 @@ def take_sample():
             s["f"] = int(sum(rpm) / len(rpm))
     ck = res.get("ckpool") or {}
     extra["blockFound"] = bool(ck.get("blockFound"))
+    extra["bestshare"] = (ck.get("pool") or {}).get("bestshare")
     n = d.get("Node") or {}
     s["n"] = (((n.get("online") or {}).get("result") or {}).get("online") or {}).get("status") or "unknown"
     bi = ((((n.get("stats") or {}).get("result") or {}).get("stats") or {}).get("blockchainInfo") or {})
@@ -889,6 +935,11 @@ def record_sample(s, extra):
     if _hist_dirty[0] * SAMPLE_EVERY >= 1800:    # every 30 minutes (and on shutdown): easy on the Apollo's storage
         save_history()
     check_alerts(s, extra)
+    for fn in (daily_record, block_check):
+        try:
+            fn(s, extra)
+        except Exception as e:
+            log("%s: %s" % (fn.__name__, e))
 
 
 def bucketize(samples, step):
@@ -1283,7 +1334,7 @@ def glance_local():
     with LOCK:
         x = dict(_last)
     return {"name": os.uname().nodename, "chassis": chassis(), "status": x.get("s"), "ghs": x.get("h"), "watts": x.get("w"),
-            "tempC": x.get("tb"), "node": x.get("n"), "time": x.get("t"), "houston": VERSION, "mode": x.get("m")}
+            "tempC": x.get("tb"), "node": x.get("n"), "time": x.get("t"), "houston": VERSION, "mode": x.get("m"), "block": last_block()}
 
 
 def glance_remote(host):
@@ -1779,6 +1830,11 @@ def rate_at(ts, s):
         day = lt.tm_wday + 1
         if start >= end and minute < end:          # overnight period: the early hours belong to the previous day
             day = 7 if day == 1 else day - 1
+        months = p.get("months") or []
+        if months:          # a seasonal period; an overnight one's early hours belong to the previous day's month
+            mon = lt.tm_mon if not (start >= end and minute < end and lt.tm_mday == 1) else (12 if lt.tm_mon == 1 else lt.tm_mon - 1)
+            if mon not in months:
+                continue
         if day in p["days"] and _in_window(minute, start, end):
             return float(p["rate"])
     return s.get("rate")
@@ -2283,6 +2339,806 @@ def econ_loop():
         except Exception as e:
             log("economics error: %s" % e)
         time.sleep(min(60, max(5, AUTOPILOT_EVERY)))
+
+
+# --------------------------------------------------------------------------- daily totals and the monthly report
+# history.json keeps a week of minute readings; daily.json keeps one small record per day (about 3 years), added
+# up as the readings come in: energy, electricity cost (time-of-use aware), heat credit, expected earnings at that
+# moment's difficulty and price, running time, hashrate, time per mode, temperature and best share.
+DAILY_FILE = os.path.join(STATE_DIR, "daily.json")
+DAILY_KEEP = 1100
+BLOCKS_FILE = os.path.join(STATE_DIR, "blocks.json")
+MONTH_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+_daily = {"days": None, "meta": {}, "lastT": None}
+_daily_lock = threading.RLock()
+_block_flag = [None]
+
+
+def day_key(ts):
+    return time.strftime("%Y-%m-%d", time.localtime(ts))
+
+
+def _daily_load():
+    with _daily_lock:
+        if _daily["days"] is None:
+            d = read_json(DAILY_FILE, {})
+            _daily["days"] = d.get("days") if isinstance(d.get("days"), dict) else {}
+            _daily["meta"] = d.get("meta") if isinstance(d.get("meta"), dict) else {}
+
+
+def daily_save():
+    with _daily_lock:
+        if _daily["days"] is None:
+            return
+        for k in sorted(_daily["days"])[:-DAILY_KEEP]:
+            del _daily["days"][k]
+        data = json.loads(json.dumps({"days": _daily["days"], "meta": _daily["meta"]}))
+    write_json(DAILY_FILE, data, private=True, compact=True)
+
+
+def _daily_add(x, dt_s, s, net, price, best=None, est=False):
+    """Add one reading (covering dt_s seconds) to its day."""
+    t = x["t"]
+    rec = _daily["days"].setdefault(day_key(t), {"secs": 0, "on": 0, "kwh": 0.0, "cost": 0.0, "heat": 0.0, "btc": 0.0,
+                                                 "rev": 0.0, "thsS": 0.0, "modes": {}})
+    if est:
+        rec["est"] = True
+    rec["secs"] += dt_s
+    online = x.get("s") == "online"
+    w = x.get("w") or 0
+    if online and w:
+        rec["on"] += dt_s
+        w += float(s["econ"].get("extraW") or 0)
+    kwh = w * dt_s / 3.6e6
+    rec["kwh"] += kwh
+    if kwh:
+        rate = rate_at(t, s)
+        if rate is not None:
+            rec["cost"] += kwh * float(rate)
+        rec["heat"] += kwh * heat_value(t, temp_at(t), s, rate)
+    h = x.get("h")
+    if online and h and h > 100:
+        ths = h / 1000
+        rec["thsS"] += ths * dt_s
+        if net:
+            btc = ths * btc_per_th_day(net["difficulty"], net["height"], net["feeBtc"]) * dt_s / 86400
+            rec["btc"] += btc
+            if price:
+                rec["rev"] += btc * price[0]
+                rec.setdefault("fiat", price[1])
+        m = x.get("m")
+        if m:
+            rec["modes"][m] = rec["modes"].get(m, 0) + dt_s
+    if x.get("tb") is not None:
+        rec["tbMax"] = max(rec.get("tbMax") or -99, x["tb"])
+    if best:
+        rec["best"] = max(rec.get("best") or 0, best)
+
+
+def _price_now(s):
+    with LOCK:
+        p = dict(_price)
+    if p.get("price") and (not s["price"].get("fiat") or p.get("fiat") == s["price"]["fiat"]):
+        return (float(p["price"]), p.get("fiat", "USD"))
+    return None
+
+
+def daily_record(x, extra):
+    """Called for every new reading."""
+    _daily_load()
+    s = get_settings()
+    with _daily_lock:
+        meta = _daily["meta"]
+        if "since" not in meta:
+            meta["since"] = x["t"]               # readings before this come from history.json (filled in once)
+        last = _daily["lastT"]
+        dt_s = SAMPLE_EVERY if last is None else max(0, min(x["t"] - last, SAMPLE_EVERY * 3))
+        _daily["lastT"] = x["t"]
+        best = None
+        try:
+            best = float(extra.get("bestshare") or 0) or None
+        except (TypeError, ValueError):
+            pass
+        _daily_add(x, dt_s, s, _econ.get("network"), _price_now(s), best)
+        if not meta.get("backfilled"):
+            _daily_backfill(s)
+
+
+def _daily_backfill(s):
+    """Once: turn the readings Houston already has (up to 7 days, from before 2.7.0) into daily records, priced
+    with today's network numbers (marked as estimates). Waits until the network numbers and price are in."""
+    net, price = _econ.get("network"), _price_now(s)
+    if not net or not price:
+        return
+    with LOCK:
+        hist = [x for x in _history if x["t"] < _daily["meta"]["since"]]
+    last = None
+    gap = max(SAMPLE_EVERY, 60) * 3                # history.json readings are about a minute apart
+    for x in hist:
+        dt_s = SAMPLE_EVERY if last is None else max(0, min(x["t"] - last, gap))
+        last = x["t"]
+        _daily_add(x, dt_s, s, net, price, est=True)
+    _daily["meta"]["backfilled"] = int(time.time())
+    if hist:
+        log("monthly report: %d earlier readings added as estimates" % len(hist))
+
+
+def _sum_days(recs, fee):
+    tot = {"kwh": 0.0, "cost": 0.0, "heat": 0.0, "btc": 0.0, "rev": 0.0, "secs": 0, "on": 0, "thsS": 0.0}
+    modes, tb, best = {}, None, None
+    for _, r in recs:
+        for k in tot:
+            tot[k] += r.get(k) or 0
+        for m, v in (r.get("modes") or {}).items():
+            modes[m] = modes.get(m, 0) + v
+        if r.get("tbMax") is not None:
+            tb = r["tbMax"] if tb is None else max(tb, r["tbMax"])
+        if r.get("best"):
+            best = max(best or 0, r["best"])
+    k = 1 - fee / 100
+    out = {"kwh": round(tot["kwh"], 2), "cost": round(tot["cost"], 2), "heat": round(tot["heat"], 2),
+           "btc": round(tot["btc"] * k, 8), "sats": int(round(tot["btc"] * k * 1e8)), "earned": round(tot["rev"] * k, 2),
+           "uptime": round(tot["on"] / tot["secs"], 4) if tot["secs"] else None,
+           "ths": round(tot["thsS"] / tot["on"], 2) if tot["on"] else None,
+           "modes": {m: round(v / 3600, 1) for m, v in sorted(modes.items(), key=lambda kv: -kv[1])},
+           "tbMax": tb, "best": best}
+    out["net"] = round(out["earned"] + out["heat"] - out["cost"], 2)
+    return out
+
+
+def _month_days(month):
+    y, m = int(month[:4]), int(month[5:])
+    nxt = dt.date(y + (m == 12), 1 if m == 12 else m + 1, 1)
+    return (nxt - dt.date(y, m, 1)).days
+
+
+def report_view(month=None):
+    _daily_load()
+    s = get_settings()
+    fee = float(s["econ"].get("poolFee") or 0)
+    with _daily_lock:
+        days = json.loads(json.dumps(_daily["days"]))
+        since = _daily["meta"].get("since")
+    today = dt.date.today()
+    cur = today.strftime("%Y-%m")
+    months = sorted({k[:7] for k in days} | {cur}, reverse=True)
+    month = month if month and MONTH_RE.match(month) else cur
+    recs = sorted((k, v) for k, v in days.items() if k.startswith(month))
+    tot = _sum_days(recs, fee)
+    y, m = int(month[:4]), int(month[5:])
+    prev = "%04d-%02d" % (y - (m == 1), 12 if m == 1 else m - 1)
+    prev_recs = sorted((k, v) for k, v in days.items() if k.startswith(prev))
+    k = 1 - fee / 100
+    series = [{"d": d, "kwh": round(r.get("kwh", 0), 3), "cost": round(r.get("cost", 0), 3), "heat": round(r.get("heat", 0), 3),
+               "earned": round((r.get("rev") or 0) * k, 3), "sats": int(round((r.get("btc") or 0) * k * 1e8)),
+               "net": round((r.get("rev") or 0) * k + (r.get("heat") or 0) - (r.get("cost") or 0), 3),
+               "uptime": round(r["on"] / r["secs"], 3) if r.get("secs") else None, "est": bool(r.get("est"))} for d, r in recs]
+    elapsed = _month_days(month) if month != cur else today.day
+    acts = [a for a in read_json(ACTIVITY_FILE, []) if str(a.get("time", "")).startswith(month)]
+    out = {"month": month, "months": months, "days": len(recs), "daysInMonth": _month_days(month), "elapsed": elapsed,
+           "partial": month == cur or len(recs) < elapsed, "estimated": any(r.get("est") for _, r in recs),
+           "since": day_key(since) if since else None, "fiat": next((r.get("fiat") for _, r in recs if r.get("fiat")), None),
+           "currency": s.get("currency", "$"), "totals": tot, "series": series,
+           "prev": {"month": prev, "net": _sum_days(prev_recs, fee)["net"], "days": len(prev_recs)} if prev_recs else None,
+           "blocks": [b for b in read_json(BLOCKS_FILE, []) if day_key(b.get("at", 0)).startswith(month)],
+           "alerts": sum(1 for a in acts if a.get("source") == "alert"),
+           "switches": sum(1 for a in acts if a.get("source") in ("schedule", "autopilot") and a.get("ok")),
+           "pool": pool_month(month, tot)}
+    return out
+
+
+def report_alert():
+    """On the 1st (from 9 AM), a notification with last month's totals."""
+    now = dt.datetime.now()
+    if now.hour < 9:
+        return
+    first = now.replace(day=1)
+    prev = (first - dt.timedelta(days=1)).strftime("%Y-%m")
+    _daily_load()
+    with _daily_lock:
+        if _daily["meta"].get("reported") == prev:
+            return
+        has = any(k.startswith(prev) for k in _daily["days"])
+        _daily["meta"]["reported"] = prev
+    daily_save()
+    s = get_settings()
+    if not has or not s["alerts"].get("report", True):
+        return
+    r = report_view(prev)
+    t = r["totals"]
+    name = dt.date(int(prev[:4]), int(prev[5:]), 1).strftime("%B")
+    parts = ["earned %s (%s sats)" % (money_txt(t["earned"], s), format(t["sats"], ",")), "electricity %s" % money_txt(t["cost"], s)]
+    if t["heat"]:
+        parts.append("heat saved %s" % money_txt(t["heat"], s))
+    msg = "%s: net %s. Mining %d%% of the time." % (", ".join(parts).capitalize(), money_txt(t["net"], s), round((t["uptime"] or 0) * 100))
+    if r["pool"] and r["pool"].get("sats") is not None:
+        msg += " Your pool paid %s sats." % format(r["pool"]["sats"], ",")
+    alert("report", True, "Your %s report" % name, msg, "bar_chart", "low", repeat_hours=0)
+    _alert_state.get("report", {})["active"] = False         # a one-off note, not a condition with an all-clear
+    log("monthly report sent for %s" % prev)
+
+
+def block_check(x, extra):
+    """A solo block found: remember it (for the celebration on every device) and log it."""
+    flag = bool(extra.get("blockFound"))
+    blocks = read_json(BLOCKS_FILE, [])
+    if flag and (_block_flag[0] is False or (_block_flag[0] is None and not blocks)):
+        rec = {"id": int(x["t"]), "at": int(x["t"]), "height": extra.get("blocks")}
+        blocks.append(rec)
+        write_json(BLOCKS_FILE, blocks[-50:])
+        add_activity("block", True, "Your Apollo found a block!", source="houston")
+        log("solo block found!")
+    _block_flag[0] = flag
+
+
+def last_block():
+    b = read_json(BLOCKS_FILE, [])
+    return b[-1] if b else None
+
+
+# --------------------------------------------------------------------------- pool payouts
+# What your pool actually paid, next to what Houston expected from your hashrate. OCEAN: by your payout
+# address (public data, no account needed). Braiins Pool: a read-only API token from its website.
+POOL_FILE = os.path.join(STATE_DIR, "pool.json")
+POOL_EVERY = float(os.environ.get("HOUSTON_POOL_EVERY", "3600"))
+OCEAN = os.environ.get("HOUSTON_OCEAN", "https://api.ocean.xyz").rstrip("/")
+BRAIINS = os.environ.get("HOUSTON_BRAIINS", "https://pool.braiins.com").rstrip("/")
+POOL_KINDS = ("none", "ocean", "braiins")
+POOL_NAMES = {"ocean": "OCEAN", "braiins": "Braiins Pool"}
+ADDR_RE = re.compile(r"^(bc1[02-9ac-hj-np-z]{11,87}|[13][1-9A-HJ-NP-Za-km-z]{25,34})$")
+POOL_TOKEN_RE = re.compile(r"^[A-Za-z0-9._-]{8,200}$")
+_pool_lock = threading.Lock()
+
+
+def http_json_h(url, headers, timeout=15):
+    """JSON from a URL with extra headers (an API token): redirects aren't followed, replies capped at 1 MB."""
+    h = {"User-Agent": "Houston/" + VERSION, "Accept": "application/json"}
+    h.update(headers or {})
+    return json.loads(fetch(urllib.request.Request(url, headers=h), timeout).decode())
+
+
+def _when(v):
+    """A pool's timestamp: unix seconds (or ms) or an ISO date."""
+    if v in (None, ""):
+        return None
+    try:
+        f = float(v)
+        return int(f / 1000 if f > 1e11 else f)
+    except (TypeError, ValueError):
+        pass
+    try:
+        return int(dt.datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp())
+    except ValueError:
+        return None
+
+
+def _f(v):
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def fetch_ocean(addr, days=90):
+    now = int(time.time())
+    snap = (http_json(OCEAN + "/v1/statsnap/" + addr) or {}).get("result") or {}
+    ep = (http_json("%s/v1/earnpay/%s/%d/%d" % (OCEAN, addr, now - days * 86400, now), timeout=25) or {}).get("result") or {}
+    per_day = {}
+    for e in ep.get("earnings") or []:
+        t = _when(e.get("ts"))
+        if t:
+            per_day[day_key(t)] = per_day.get(day_key(t), 0) + int(_f(e.get("satoshis_net_earned")))
+    pays = [{"t": _when(p.get("ts")), "sats": int(_f(p.get("total_satoshis_net_paid"))), "tx": str(p.get("on_chain_txid") or "")[:64]}
+            for p in ep.get("payouts") or [] if _when(p.get("ts"))]
+    return {"days": per_day, "payouts": sorted(pays, key=lambda p: p["t"])[-50:], "unpaid": int(round(_f(snap.get("unpaid")) * 1e8)),
+            "ths": round(_f(snap.get("hashrate_300s")) / 1e12, 3), "link": "https://ocean.xyz/stats/" + addr}
+
+
+_HR_UNIT = {"h/s": 1e-12, "kh/s": 1e-9, "mh/s": 1e-6, "gh/s": 1e-3, "th/s": 1.0, "ph/s": 1e3, "eh/s": 1e6}
+
+
+def fetch_braiins(token, days=90):
+    hdr = {"Pool-Auth-Token": token}
+    prof = http_json_h(BRAIINS + "/accounts/profile/json/btc/", hdr)
+    prof = prof.get("btc", prof) if isinstance(prof, dict) else {}
+    end, start = dt.date.today(), dt.date.today() - dt.timedelta(days=days)
+    rw = http_json_h("%s/accounts/rewards/json/btc?from=%s&to=%s" % (BRAIINS, start, end), hdr, timeout=25)
+    rw = rw.get("btc", rw) if isinstance(rw, dict) else {}
+    per_day = {}
+    for r in rw.get("daily_rewards") or []:
+        t = _when(r.get("date"))
+        if t:   # Braiins dates are UTC days: label them by the UTC date, not local time
+            per_day[time.strftime("%Y-%m-%d", time.gmtime(t))] = int(round(_f(r.get("total_reward")) * 1e8))
+    pays = []
+    try:
+        po = http_json_h("%s/accounts/payouts/json/btc?from=%s&to=%s" % (BRAIINS, start, end), hdr, timeout=25)
+        po = po.get("btc", po) if isinstance(po, dict) else {}
+        for p in (po.get("onchain") or []) + (po.get("lightning") or []):
+            t = _when(p.get("resolved_at") or p.get("requested_at") or p.get("created_at") or p.get("date"))
+            if t and str(p.get("status", "")).lower() not in ("failed", "cancelled", "canceled"):
+                pays.append({"t": t, "sats": int(_f(p.get("amount_sats"))), "tx": str(p.get("tx_id") or "")[:64]})
+    except Exception as e:
+        log("pool: Braiins payouts not read: %s" % e)
+    unit = _HR_UNIT.get(str(prof.get("hash_rate_unit") or "Gh/s").lower(), 1e-3)
+    return {"days": per_day, "payouts": sorted(pays, key=lambda p: p["t"])[-50:],
+            "unpaid": int(round(_f(prof.get("current_balance")) * 1e8)), "ths": round(_f(prof.get("hash_rate_60m")) * unit, 3),
+            "link": "https://pool.braiins.com/"}
+
+
+def refresh_pool(force=False):
+    s = get_settings()
+    p = s.get("pool") or {}
+    kind = p.get("kind", "none")
+    if kind == "none":
+        return
+    who = p.get("address") if kind == "ocean" else hashlib.sha256((p.get("token") or "").encode()).hexdigest()[:16]
+    with _pool_lock:
+        saved = read_json(POOL_FILE, {})
+        if saved.get("kind") != kind or saved.get("who") != who:
+            saved = {"kind": kind, "who": who}
+        if not force and time.time() - saved.get("at", 0) < POOL_EVERY:
+            return
+        try:
+            got = fetch_ocean(p["address"]) if kind == "ocean" else fetch_braiins(p["token"])
+            days = saved.get("days") or {}
+            days.update(got.pop("days"))                         # keep older days the pool no longer lists
+            for k in sorted(days)[:-800]:
+                del days[k]
+            saved.update(got, days=days, at=int(time.time()), error=None)
+        except urllib.error.HTTPError as e:
+            saved["error"] = ("the pool refused the token (%d); make a new read-only token" % e.code) if e.code in (401, 403) \
+                else "the pool answered %d" % e.code
+            saved["at"] = int(time.time())
+        except Exception as e:
+            saved["error"] = str(e)[:200]
+            saved["at"] = int(time.time())
+        if saved.get("error"):
+            log("pool: not updated: %s" % saved["error"])
+        write_json(POOL_FILE, saved, private=True)
+
+
+def pool_month(month, tot):
+    s = get_settings()
+    kind = (s.get("pool") or {}).get("kind", "none")
+    if kind == "none":
+        return None
+    saved = read_json(POOL_FILE, {})
+    if saved.get("kind") != kind:
+        return {"name": POOL_NAMES[kind], "sats": None}
+    sats = sum(v for k, v in (saved.get("days") or {}).items() if k.startswith(month))
+    return {"name": POOL_NAMES[kind], "sats": sats, "expected": tot.get("sats"),
+            "ratio": round(sats / tot["sats"], 3) if tot.get("sats") else None}
+
+
+def pool_view():
+    s = get_settings()
+    kind = (s.get("pool") or {}).get("kind", "none")
+    if kind == "none":
+        return {"kind": "none"}
+    saved = read_json(POOL_FILE, {})
+    out = {"kind": kind, "name": POOL_NAMES[kind], "error": saved.get("error"), "at": saved.get("at")}
+    if saved.get("kind") != kind or "days" not in saved:
+        out["waiting"] = True
+        return out
+    _daily_load()
+    fee = float(s["econ"].get("poolFee") or 0)
+    with _daily_lock:
+        mine = {k: int(round((v.get("btc") or 0) * (1 - fee / 100) * 1e8)) for k, v in _daily["days"].items()}
+    today = dt.date.today()
+    keys = [(today - dt.timedelta(days=i)).isoformat() for i in range(29, -1, -1)]
+    days = saved.get("days") or {}
+    series = [{"d": k, "paid": days.get(k), "expected": mine.get(k)} for k in keys]
+    both = [x for x in series if x["expected"] is not None and x["paid"] is not None]
+    paid, exp = sum(x["paid"] for x in both), sum(x["expected"] for x in both)
+    out.update({"series": series, "paid30": paid, "expected30": exp, "ratio": round(paid / exp, 3) if exp else None,
+                "daysCompared": len(both), "unpaid": saved.get("unpaid"), "payouts": (saved.get("payouts") or [])[-5:][::-1],
+                "poolThs": saved.get("ths"), "link": saved.get("link"),
+                "houstonThs": round((_last.get("h") or 0) / 1000, 3) if _last.get("s") == "online" else None})
+    return out
+
+
+# --------------------------------------------------------------------------- utility rate lookup (US)
+# OpenEI's U.S. Utility Rate Database: the residential rate plans for a ZIP code, turned into Houston's flat price
+# plus time-of-use periods (by month when the plan has seasons).
+OPENEI = os.environ.get("HOUSTON_OPENEI", "https://api.openei.org").rstrip("/")
+ZIP_RE = re.compile(r"^\d{5}$")
+_rates_cache = {}
+
+
+def _period_price(per):
+    """A period's price per kWh: its first tier (most homes' usage), including riders and adjustments."""
+    if not per:
+        return None, False
+    t = per[0]
+    unit = str(t.get("unit") or "kWh").lower()
+    if not unit.startswith("kwh"):
+        return None, False
+    return round(_f(t.get("rate")) + _f(t.get("adj")), 5), len(per) > 1
+
+
+def convert_tariff(it):
+    prices, tiers = [], False
+    for per in it.get("energyratestructure") or []:
+        p, tr = _period_price(per)
+        prices.append(p)
+        tiers = tiers or tr
+    if not prices or all(p is None for p in prices):
+        return None
+    def grid(name):
+        g = it.get(name)
+        ok = isinstance(g, list) and len(g) == 12 and all(isinstance(r, list) and len(r) == 24 for r in g)
+        return g if ok else [[0] * 24 for _ in range(12)]
+    wd, we = grid("energyweekdayschedule"), grid("energyweekendschedule")
+    def price(i):
+        return prices[i] if isinstance(i, int) and 0 <= i < len(prices) else None
+    weight = {}
+    for mo in range(12):
+        for h in range(24):
+            for g, w in ((wd, 5), (we, 2)):
+                p = price(g[mo][h])
+                if p is not None:
+                    weight[p] = weight.get(p, 0) + w
+    if not weight:
+        return None
+    flat = max(weight, key=lambda p: (weight[p], -p))
+    avg = round(sum(p * w for p, w in weight.items()) / sum(weight.values()), 5)
+    runs = {}
+    for mo in range(12):
+        for g, days in ((wd, (1, 2, 3, 4, 5)), (we, (6, 7))):
+            row = [price(i) for i in g[mo]]
+            h = 0
+            while h < 24:
+                if row[h] is None or row[h] == flat:
+                    h += 1
+                    continue
+                r, start = row[h], h
+                while h < 24 and row[h] == r:
+                    h += 1
+                runs.setdefault((days, start, h, r), []).append(mo + 1)
+    combo = {}
+    for (days, start, end, r), months in runs.items():
+        combo.setdefault((start, end, r, tuple(months)), set()).update(days)
+    tou = [{"days": sorted(days), "from": "%02d:00" % start, "to": "%02d:00" % (end % 24), "rate": r,
+            "months": [] if len(months) == 12 else list(months)}
+           for (start, end, r, months), days in sorted(combo.items(), key=lambda kv: (kv[0][3], kv[0][0], kv[0][2]))]
+    note = None
+    if len(tou) > 24:
+        tou, flat, note = [], avg, "This plan has too many price periods for Houston; it uses the plan's average price instead."
+    fixed = it.get("fixedchargefirstmeter")
+    return {"flat": flat, "average": avg, "tou": tou, "tiers": tiers, "seasonal": any(p["months"] for p in tou), "note": note,
+            "fixed": round(_f(fixed), 2) if fixed else None, "fixedUnit": it.get("fixedchargeunits")}
+
+
+def utility_rates(zipcode):
+    if not ZIP_RE.match(zipcode or ""):
+        raise ValueError("enter a 5-digit US ZIP code")
+    hit = _rates_cache.get(zipcode)
+    if hit and time.time() - hit[0] < 86400:
+        return hit[1]
+    from urllib.parse import urlencode
+    key = (get_settings().get("utility") or {}).get("key") or "DEMO_KEY"
+    q = urlencode({"version": 7, "format": "json", "api_key": key, "address": zipcode, "sector": "Residential",
+                   "approved": "true", "detail": "full", "orderby": "startdate", "direction": "desc", "limit": 60})
+    try:
+        j = http_json(OPENEI + "/utility_rates?" + q, timeout=30)
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403, 429):
+            raise RuntimeError("OpenEI's shared key is busy or was refused. Get your own free key (see below) and try again.")
+        raise RuntimeError("OpenEI answered %d" % e.code)
+    if isinstance(j, dict) and j.get("error"):
+        msg = j["error"].get("message") if isinstance(j["error"], dict) else str(j["error"])
+        raise RuntimeError(str(msg)[:200])
+    now, seen, out = time.time(), set(), []
+    for it in (j.get("items") or []) if isinstance(j, dict) else []:
+        if it.get("enddate") and _f(it["enddate"]) < now:
+            continue
+        name, util = str(it.get("name") or "").strip()[:120], str(it.get("utility") or "").strip()[:120]
+        if (util, name) in seen:
+            continue
+        seen.add((util, name))
+        c = convert_tariff(it)
+        if c:
+            c.update({"id": str(it.get("label") or "")[:40], "utility": util, "name": name,
+                      "start": _when(it.get("startdate")), "uri": str(it.get("uri") or "")[:200]})
+            out.append(c)
+    out = out[:25]
+    _rates_cache[zipcode] = (time.time(), out)
+    return out
+
+
+# --------------------------------------------------------------------------- Houston updates
+# Houston checks GitHub for a newer release. Updating needs root, which Houston itself never has: it only leaves
+# a request (the version number) in its own folder. The installer's small root helper (houston-update.sh, run by
+# houston-update.path) downloads that release from GitHub itself, checks it, installs only Houston's files,
+# restarts Houston and rolls back if it doesn't come up.
+GITHUB_API = os.environ.get("HOUSTON_GITHUB_API", "https://api.github.com").rstrip("/")
+REPO = "eisenreichGIT/houston-apollo"
+HUPD_EVERY = float(os.environ.get("HOUSTON_SELF_UPDATE_EVERY", str(12 * 3600)))
+HUPD_REQUEST = os.path.join(STATE_DIR, "update-request")
+HUPD_STATUS = os.path.join(STATE_DIR, "houston-update-status.json")
+_hupd = {"latest": None, "checked": 0, "error": None}
+
+
+def updater_ready():
+    return os.path.isfile(os.path.join(HERE, "houston-update.sh")) and (
+        os.path.isfile("/etc/systemd/system/houston-update.path") or os.environ.get("HOUSTON_UPDATER_TEST") == "1")
+
+
+def houston_latest(force=False):
+    if not force and _hupd["latest"] and time.time() - _hupd["checked"] < HUPD_EVERY:
+        return _hupd["latest"]
+    try:
+        j = http_json("%s/repos/%s/releases/latest" % (GITHUB_API, REPO), timeout=15)
+        tag = str(j.get("tag_name") or "")
+        if not vtuple(tag):
+            raise RuntimeError("no release found")
+        _hupd.update(latest={"version": tag.lstrip("v"), "url": str(j.get("html_url") or "")[:200],
+                             "notes": str(j.get("body") or "")[:3000], "date": str(j.get("published_at") or "")[:20]},
+                     checked=time.time(), error=None)
+    except Exception as e:
+        _hupd.update(checked=time.time(), error=str(e)[:200])
+        raise
+    return _hupd["latest"]
+
+
+def houston_update_view(check=False):
+    try:
+        houston_latest(force=check)
+    except Exception:
+        pass
+    lt = _hupd["latest"] or {}
+    st = read_json(HUPD_STATUS, {})
+    req = os.path.exists(HUPD_REQUEST)
+    if req and not st.get("state"):
+        st = {"state": "requested"}
+    if req and os.path.getmtime(HUPD_REQUEST) < time.time() - 120:
+        st = {"state": "failed", "message": "Houston's updater didn't start. Run the installer once (it adds the updater), then try again."}
+    return {"current": VERSION, "latest": lt.get("version"), "notes": lt.get("notes"), "url": lt.get("url"), "date": lt.get("date"),
+            "available": newer(lt.get("version"), VERSION), "ready": updater_ready(), "status": st if st.get("version") in (None, lt.get("version")) or req else {},
+            "checked": int(_hupd["checked"]) or None, "error": _hupd["error"]}
+
+
+def start_houston_update(version):
+    lt = houston_latest()
+    if not lt or str(version) != lt["version"] or not newer(lt["version"], VERSION):
+        raise ValueError("That isn't the newest Houston. Check for updates and try again.")
+    if not updater_ready():
+        raise ValueError("This Houston was installed before one-tap updates. Run the installer once more; after that, updates are one tap.")
+    if not VER_RE.match(lt["version"]) or not re.match(r"^\d{1,4}\.\d{1,4}\.\d{1,4}$", lt["version"]):
+        raise ValueError("unexpected version number")
+    with open(HUPD_REQUEST + ".tmp", "w") as f:
+        f.write(lt["version"] + "\n")
+    os.replace(HUPD_REQUEST + ".tmp", HUPD_REQUEST)
+    try:
+        os.remove(HUPD_STATUS)
+    except OSError:
+        pass
+    add_activity("houston_update", True, "Houston update started (%s to %s)" % (VERSION, lt["version"]), source="app")
+    log("Houston update to %s requested" % lt["version"])
+    return "Updating Houston to %s" % lt["version"]
+
+
+def houston_update_alert():
+    st = read_json(HUPD_STATUS, {})
+    if st.get("state") in ("done", "failed") and st.get("version") and not st.get("logged"):
+        ok = st["state"] == "done"
+        add_activity("houston_update", ok, ("Houston updated to %s" % st["version"]) if ok
+                     else "Houston update to %s failed: %s" % (st["version"], st.get("message") or "see the log"), source="houston")
+        st["logged"] = True
+        write_json(HUPD_STATUS, st, private=True)
+    s = get_settings()
+    try:
+        lt = houston_latest()
+    except Exception:
+        return
+    seen = read_json(UPDATE_FILE, {}).get("houstonNotified")
+    if newer(lt["version"], VERSION) and seen != lt["version"] and s["alerts"].get("update", True):
+        _alert_state.pop("houston_update", None)
+        alert("houston_update", True, "Houston %s is available" % lt["version"],
+              "A new Houston is out. Settings › Houston (this app) installs it with one tap.", "sparkles", "low", repeat_hours=24 * 365)
+        u = read_json(UPDATE_FILE, {})
+        u["houstonNotified"] = lt["version"]
+        write_json(UPDATE_FILE, u)
+
+
+# --------------------------------------------------------------------------- health check
+def _age(t):
+    if not t:
+        return None
+    return int(time.time() - t)
+
+
+def _ago(sec):
+    if sec is None:
+        return "never"
+    if sec < 90:
+        return "just now"
+    if sec < 5400:
+        return "%d minutes ago" % round(sec / 60)
+    if sec < 172800:
+        return "%d hours ago" % round(sec / 3600)
+    return "%d days ago" % round(sec / 86400)
+
+
+def health_view(token):
+    """Everything Houston depends on, checked in one go, with what to do about anything that's off."""
+    out = []
+    def add(group, label, state, detail, fix=None):
+        out.append({"group": group, "label": label, "state": state, "detail": detail, "fix": fix})
+    s = get_settings()
+    # --- the Apollo
+    t0 = time.time()
+    try:
+        apollo("query { Miner { online { result { online { status } } } } }", timeout=10)
+        add("Apollo", "Apollo API", "ok", "Answering (%d ms)" % ((time.time() - t0) * 1000))
+    except Exception as e:
+        add("Apollo", "Apollo API", "fail", "Not answering: %s" % str(e)[:120],
+            "Wait a few minutes if the Apollo is starting or updating. Otherwise restart the Apollo.")
+    stored = stored_token()
+    if not stored:
+        add("Apollo", "Background sign-in", "warn", "Not saved yet", "Save any setting or the schedule once; Houston keeps the sign-in it needs.")
+    else:
+        try:
+            ok = token_ok(stored)
+        except Exception:
+            ok = None
+        if ok:
+            add("Apollo", "Background sign-in", "ok", "Valid: the schedule, alerts and autopilot can act")
+        elif ok is False:
+            add("Apollo", "Background sign-in", "fail", "Expired (the Apollo password changed?)",
+                "Sign out of Houston, sign in again, and save the schedule once.")
+        else:
+            add("Apollo", "Background sign-in", "warn", "Can't check while the Apollo API is down")
+    with LOCK:
+        last = dict(_last)
+    age = _age(last.get("t"))
+    if age is None or age > SAMPLE_EVERY * 5:
+        add("Apollo", "Readings", "fail", "Last reading %s" % _ago(age), "Houston's sampler may be stuck: restart Houston (or the Apollo).")
+    else:
+        st = last.get("s")
+        add("Apollo", "Readings", "ok" if st == "online" else "warn",
+            "Miner %s, last reading %s" % ({"online": "mining", "offline": "stopped"}.get(st, st or "unknown"), _ago(age)),
+            None if st == "online" else "Start the miner on Home if it should be running.")
+    if last.get("n"):
+        b, hd = last.get("blocks"), last.get("headers")
+        if last["n"] != "online":
+            add("Apollo", "Bitcoin node", "warn", "Node is %s" % last["n"], "Start it on Home, if you use it.")
+        elif b and hd and hd - b > 3:
+            add("Apollo", "Bitcoin node", "warn", "Syncing: %s of %s blocks" % (format(b, ","), format(hd, ",")), "Nothing to do: it catches up by itself.")
+        else:
+            add("Apollo", "Bitcoin node", "ok", "Running and in sync" + (" (block %s)" % format(b, ",") if b else ""))
+    nd = last.get("nodeDisk")
+    if nd and nd.get("total"):
+        pct = 100 * nd["used"] / nd["total"]
+        add("Apollo", "Node drive", "fail" if pct >= 95 else "warn" if pct >= 85 else "ok", "%d%% full" % pct,
+            "Free space or use a larger drive before it fills up." if pct >= 85 else None)
+    d = last.get("disk")
+    if d and d.get("total"):
+        pct = 100 * d["used"] / d["total"]
+        add("Apollo", "Apollo's own storage", "fail" if pct >= 95 else "warn" if pct >= 85 else "ok", "%d%% full" % pct,
+            "Clear old logs or files on the Apollo." if pct >= 85 else None)
+    # --- Houston
+    try:
+        fs = os.statvfs(STATE_DIR)
+        free = fs.f_bavail * fs.f_frsize / 1e6
+        add("Houston", "Houston's storage", "ok" if free > 200 else "warn", "%s MB free for Houston's files" % format(int(free), ","),
+            None if free > 200 else "Free some space on the Apollo's main drive.")
+    except OSError as e:
+        add("Houston", "Houston's storage", "fail", str(e)[:120])
+    sch = read_json(SCHEDULE_FILE, default_schedule())
+    fails = [a for a in read_json(ACTIVITY_FILE, [])[:20] if a.get("source") == "schedule" and not a.get("ok")]
+    if not sch.get("enabled"):
+        add("Houston", "Schedule", "off", "Off")
+    elif s["econ"]["autopilot"].get("mode") == "run":
+        add("Houston", "Schedule", "off", "Paused while the autopilot runs")
+    elif fails:
+        add("Houston", "Schedule", "warn", "Last change failed: %s" % str(fails[0].get("message"))[:120], "Open Activity for details; save the schedule again.")
+    else:
+        nxt = upcoming(sch, count=1)
+        when = ""
+        if nxt:
+            w = dt.datetime.fromisoformat(nxt[0]["time"])
+            when = " · next: %s, %s %s" % (nxt[0]["label"], WEEKDAYS[w.weekday()], w.strftime("%H:%M"))
+        add("Houston", "Schedule", "ok", "On" + when)
+    tz = os.environ.get("TZ") or time.strftime("%Z")
+    add("Houston", "Time zone", "ok", tz)
+    hu = houston_update_view()
+    if hu["available"]:
+        add("Houston", "Houston version", "warn", "%s (newer: %s)" % (VERSION, hu["latest"]),
+            "Settings › Houston (this app) › Update." if hu["ready"] else "Run the installer once more to get one-tap updates.")
+    else:
+        add("Houston", "Houston version", "ok", VERSION + ("" if hu["latest"] else " (couldn't check GitHub)"))
+    if not hu["ready"]:
+        add("Houston", "One-tap updates", "warn", "Not set up on this Apollo", "Run the installer once more (sudo bash install-houston.sh).")
+    # --- alerts
+    a = s["alerts"]
+    if not a.get("enabled"):
+        add("Alerts", "Alerts", "off", "Off", "Settings › Alerts on your phone, if you want them.")
+    else:
+        devs = push_devices() if PUSH_OK else []
+        chans = (["%d device%s" % (len(devs), "" if len(devs) == 1 else "s")] if devs else []) + (["ntfy topic"] if a.get("topic") else [])
+        add("Alerts", "Alerts", "ok" if chans else "fail", "Sending to " + " and ".join(chans) if chans else "No device and no ntfy topic",
+            None if chans else "Turn on notifications on a device, or set an ntfy topic.")
+        if not PUSH_OK:
+            add("Alerts", "Device notifications", "warn", "Not available (python3-cryptography missing)", "Run the installer once more, or use ntfy.")
+        if a.get("topic"):
+            try:
+                fetch(urllib.request.Request(a.get("server") or "https://ntfy.sh", method="HEAD", headers={"User-Agent": "Houston/" + VERSION}), 8)
+                add("Alerts", "ntfy server", "ok", "Reachable")
+            except urllib.error.HTTPError:
+                add("Alerts", "ntfy server", "ok", "Reachable")
+            except Exception as e:
+                add("Alerts", "ntfy server", "fail", "Not reachable: %s" % str(e)[:100], "Check the server address in Settings › Alerts.")
+    # --- remote access
+    ts_dev = "/sys/class/net/tailscale0"
+    if os.path.exists(ts_dev):
+        try:
+            state = open(ts_dev + "/operstate").read().strip()
+        except OSError:
+            state = "unknown"
+        add("Remote access", "Tailscale", "ok" if state in ("up", "unknown") else "warn",
+            "Connected" if state in ("up", "unknown") else "Installed, but down (%s)" % state,
+            None if state in ("up", "unknown") else "Run 'sudo tailscale up' on the Apollo.")
+    else:
+        add("Remote access", "Tailscale", "off", "Not installed: Houston works on your home network only",
+            "To use Houston away from home, run the installer without --no-tailscale.")
+    # --- data from the internet
+    with LOCK:
+        p = dict(_price)
+    if s["price"].get("enabled"):
+        page = _age(p.get("updated"))
+        add("Internet", "Bitcoin price", "ok" if page is not None and page < 900 else "fail",
+            ("%s, updated %s" % (p.get("source"), _ago(page))) if page is not None else "No price yet" + (": " + p["error"] if p.get("error") else ""),
+            None if page is not None and page < 900 else "Check the Apollo's internet connection.")
+    net = _econ.get("network")
+    if s["econ"].get("enabled"):
+        e = (_econ.get("errors") or {})
+        add("Internet", "Network numbers (mempool.space)", "ok" if net and not e.get("network") else "warn",
+            ("Updated %s" % _ago(_age(net.get("at")))) if net else "Not loaded" + (": " + e["network"] if e.get("network") else ""))
+        if s["econ"]["heat"].get("type") != "none":
+            add("Internet", "Weather (Open-Meteo)", "ok" if _econ.get("forecast") and not e.get("weather") else "warn",
+                (_econ.get("geo") or {}).get("name") or e.get("weather") or "Not loaded",
+                None if _econ.get("forecast") else "Check the ZIP code or town in Settings › Mining economics.")
+    pk = (s.get("pool") or {}).get("kind", "none")
+    if pk != "none":
+        ps = read_json(POOL_FILE, {})
+        add("Internet", POOL_NAMES[pk], "ok" if ps.get("days") is not None and not ps.get("error") else "warn",
+            ("Error: " + ps["error"]) if ps.get("error") else ("Updated %s" % _ago(_age(ps.get("at")))) if ps.get("at") else "Not loaded yet",
+            "Check the address or token in Settings › Mining economics › Pool." if ps.get("error") else None)
+    add("Internet", "GitHub (Houston updates)", "ok" if not _hupd.get("error") else "warn",
+        "Checked %s" % _ago(_age(_hupd.get("checked"))) if not _hupd.get("error") else _hupd["error"])
+    # clock: compare with a web server's clock (the price source's Date header)
+    try:
+        req = urllib.request.Request(GITHUB_API, method="HEAD", headers={"User-Agent": "Houston/" + VERSION})
+        try:
+            with urllib.request.urlopen(req, timeout=8) as r:
+                date = r.headers.get("Date")
+        except urllib.error.HTTPError as he:
+            date = he.headers.get("Date")
+        import email.utils
+        skew = abs(time.time() - email.utils.parsedate_to_datetime(date).timestamp()) if date else None
+        if skew is None:
+            add("Houston", "Clock", "warn", "Couldn't compare")
+        else:
+            add("Houston", "Clock", "ok" if skew < 120 else "fail", "Off by %d seconds" % skew if skew >= 5 else "Correct",
+                None if skew < 120 else "The Apollo's clock is wrong, so the schedule runs at the wrong time. Restart the Apollo (it sets the time from the internet).")
+    except Exception:
+        add("Houston", "Clock", "warn", "Couldn't compare (no internet?)")
+    order = {"fail": 0, "warn": 1, "ok": 2, "off": 3}
+    summary = {k: sum(1 for x in out if x["state"] == k) for k in order}
+    return {"checks": out, "summary": summary, "at": int(time.time()), "version": VERSION}
+
+
+def extras_loop():
+    """Pool payouts every hour, Houston update checks, the monthly report on the 1st."""
+    time.sleep(25)
+    while True:
+        for fn in (refresh_pool, houston_update_alert, report_alert):
+            try:
+                fn()
+            except Exception as e:
+                log("%s: %s" % (fn.__name__, e))
+        time.sleep(60)
 
 
 # --------------------------------------------------------------------------- Apollo software updates
@@ -2805,7 +3661,8 @@ class Handler(BaseHTTPRequestHandler):
             g["text"] = status_sentence()
             return self._send(200, g)
         if path not in ("/api/schedule", "/api/activity", "/api/settings", "/api/history", "/api/fleet", "/api/automation",
-                        "/api/push", "/api/apollo-update", "/api/houston-log", "/api/economics"):
+                        "/api/push", "/api/apollo-update", "/api/houston-log", "/api/economics", "/api/report", "/api/pool",
+                        "/api/rates", "/api/health", "/api/houston-update"):
             return self._send(404, {"error": "not found"})
         if not self._require_auth():
             return
@@ -2833,6 +3690,23 @@ class Handler(BaseHTTPRequestHandler):
             if self._query().get("refresh") == "1":
                 refresh_econ(True)
             return self._send(200, econ_view())
+        if path == "/api/report":
+            return self._send(200, report_view(self._query().get("month")))
+        if path == "/api/pool":
+            if self._query().get("refresh") == "1":
+                refresh_pool(True)
+            return self._send(200, pool_view())
+        if path == "/api/rates":
+            try:
+                return self._send(200, {"plans": utility_rates(self._query().get("zip", "").strip())})
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:
+                return self._send(502, {"error": "Couldn't look up rates: %s" % str(e)[:200]})
+        if path == "/api/health":
+            return self._send(200, health_view(self._token()))
+        if path == "/api/houston-update":
+            return self._send(200, houston_update_view(self._query().get("check") == "1"))
         if path == "/api/houston-log":
             return self._send(200, {"content": "\n".join(_LOG_RING), "timestamp": dt.datetime.now().astimezone().isoformat(timespec="seconds")})
         return self._send(404, {"error": "not found"})
@@ -2855,11 +3729,14 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:
                     old_price, old_market = get_settings()["price"], get_settings()["market"]
                     old_econ_loc = get_settings()["econ"]["heat"].get("location")
+                    old_pool = dict(get_settings()["pool"])
                     new = validate_settings(self._json_body(), get_settings())
                     write_json(SETTINGS_FILE, new, private=True)
                     save_token(self._token())
                 if new["price"] != old_price:
                     threading.Thread(target=refresh_price, args=(True,), daemon=True).start()
+                if new["pool"] != old_pool:
+                    threading.Thread(target=refresh_pool, args=(True,), daemon=True).start()
                 if new["econ"]["heat"].get("location") != old_econ_loc:
                     threading.Thread(target=refresh_econ, args=(True,), daemon=True).start()
                 if new["market"] != old_market or new["price"].get("fiat") != old_price.get("fiat"):
@@ -2917,9 +3794,19 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, automation_action(path[len("/api/v1/action/"):]), "text/plain; charset=utf-8")
             except (ValueError, RuntimeError) as e:
                 return self._send(400, str(e), "text/plain; charset=utf-8")
-        if path in ("/api/alerts/test", "/api/discover", "/api/automation", "/api/push", "/api/apollo-update"):
+        if path in ("/api/alerts/test", "/api/discover", "/api/automation", "/api/push", "/api/apollo-update", "/api/houston-update"):
             if not self._require_auth():
                 return
+            if path == "/api/houston-update":
+                try:
+                    with LOCK:
+                        save_token(self._token())
+                    msg = start_houston_update(str(self._json_body().get("version") or ""))
+                except (ValueError, UnicodeDecodeError) as e:
+                    return self._send(409, {"error": str(e)})
+                except Exception as e:
+                    return self._send(502, {"error": "Couldn't start the update: %s" % str(e)[:200]})
+                return self._send(200, {"ok": True, "message": msg, "update": houston_update_view()})
             if path == "/api/apollo-update":
                 try:
                     with LOCK:
@@ -3021,9 +3908,10 @@ def main():
         threading.Thread(target=update_loop, daemon=True).start()
     if ECON_EVERY > 0:
         threading.Thread(target=econ_loop, daemon=True).start()
+    threading.Thread(target=extras_loop, daemon=True).start()
 
     def stop(*_):
-        save_history()          # keep the charts across restarts
+        save_history()          # keep the charts (and daily totals) across restarts
         os._exit(0)
     signal.signal(signal.SIGTERM, stop)
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)

@@ -65,17 +65,20 @@ Sign in with your dashboard password. At home with Tailscale off, use the home a
 
 Times use the time zone shown under *Coming up* (your phone's or computer's when you first save; Houston offers to switch if they differ). After saving, Houston offers to apply what the schedule says right now. A mode change restarts a running miner (about a minute) and never starts a stopped one. If the Apollo was off at a scheduled time, Houston still runs it up to 3 minutes late (after a restart, say), but not later.
 
-**Activity**: what happened and who did it: *Schedule*, *You* (from Houston), *Shortcut* (Siri etc.), *Alert* or *Houston* (e.g. an Apollo software update finishing).
+**Activity**: what happened and who did it: *Schedule*, *You* (from Houston), *Shortcut* (Siri etc.), *Alert*, *Autopilot* or *Houston* (e.g. an Apollo software update finishing).
+
+**Activity › Health**: a health check of everything Houston depends on: the Apollo API, the background sign-in, the latest readings, the node and its drive, Houston's storage, the schedule, the clock, alerts, Tailscale and each outside source (price, mempool.space, weather, your pool, GitHub). Anything that's off says what to do. *Copy report* copies a plain-text summary (no passwords, keys or addresses) to paste when asking for help. Bookmark `http://<apollo>:8088/#health`.
 
 **Activity › Logs**: the Apollo's own logs, read through its API: **Miner**, **Node**, **Solo** (when you solo mine), **System** (the Apollo's syslog) and **Houston** (Houston's recent messages). Pick 100, 300 or 1000 lines, type to filter (e.g. `error`), turn on **Live** to refresh every 5 seconds, and copy or download what you see. Errors are tinted red, warnings amber. Bookmark `http://<apollo>:8088/#logs` to open straight to them.
 
 **Settings**:
+- **Houston (this app)**: Houston's version, *Update* when a new one is out (see [Updating Houston](#updating-houston)), and *Run a health check*.
 - **This Apollo**: the Apollo software version, with *Update* when FutureBit has a new one (see [Updating the Apollo software](#updating-the-apollo-software)), and the **Front status light** switch. Changing the light restarts a running miner (about a minute; Houston asks first). A stopped miner stays stopped and uses the setting when it starts.
 - **Appearance**: Light, Dark (default) or System, which follows your phone or computer. Saved on each device separately; the sun/moon button in the top bar switches between light and dark.
 - **Temperature**: °F or °C (°F by default).
 - **Bitcoin price**: on or off, and the currency (USD, EUR, GBP, CAD, AUD, JPY, CHF). Houston fetches it from Kraken's public API every 5 seconds while Houston is open somewhere, and once a minute otherwise (Coinbase as a backup for USD, EUR and GBP), so the app itself never contacts outside sites. When your electricity currency matches, the cost tile also shows the cost in sats.
 - **Network, market & news**: on or off. Houston fetches these from mempool.space, CoinGecko, alternative.me and Bitcoin Magazine (public data, no account), every 5 to 60 minutes.
-- **Electricity**: your price per kWh, for the cost tiles.
+- **Electricity**: your price per kWh, for the cost tiles, or *Look up my utility's rates* (US, see [Mining economics](#mining-economics)).
 - **Alerts on your phone**: notifications on this device and/or the ntfy app, see below.
 - **Your Apollos**: add your other Apollos (or **Find on my network**) to see them all on Home; if they run Houston too, *Open Houston* jumps to theirs.
 - **Siri, Google & shortcuts**: a key for phone shortcuts and voice assistants, see [voice-assistants.md](voice-assistants.md).
@@ -105,7 +108,24 @@ Settings › *Mining economics*:
 
 The earnings are an expected value: a pool pays about that (minus its fee); solo mining pays nothing until you find a block. Not financial advice.
 
+**Look up your rates (US)**: Settings › Electricity › *Look up my utility's rates* searches OpenEI's U.S. Utility Rate Database for the residential plans in your ZIP code. *Use this* sets your price per kWh (the price most hours have) and adds the plan's time-of-use prices, by season when the plan has seasons. It uses each plan's first tier, ignores fixed monthly charges (they don't change with mining), and may not include a separate supplier's price in states where you choose your supplier (like Pennsylvania): check against your bill. The search uses OpenEI's shared demo key; if it's busy, get a free key and add it under the search.
+
+### Monthly report
+
+Stats › *Monthly report* adds up each month as it goes: earned (in your currency and sats, at each moment's difficulty and bitcoin price, minus your pool fee), electricity (with your time-of-use prices), heat saved, and net, plus a bar per day, mining time, average hashrate, the hottest hashboard, the mode used most, mode changes and alerts, best share (solo) and blocks found. Use ‹ › for earlier months and *Download CSV* for the days. Houston keeps one small record per day for about 3 years. When you first install 2.7.0, the past week comes from Houston's history (marked as estimates). On the 1st of each month (from 9 AM) Houston sends last month's numbers as a notification (Settings › Alerts › Monthly report). Bookmark `http://<apollo>:8088/#report`.
+
+### Pool payouts
+
+Settings › Mining economics › *Pool* connects your pool, and Stats shows what it actually paid over the last 30 days next to what Houston expected from your hashrate, your unpaid balance, the last payout and the hashrate the pool sees:
+
+- **OCEAN**: enter the bitcoin address you mine to. OCEAN's stats are public, so no account or key is needed. OCEAN pays per block the pool finds, so single days swing; 30 days evens it out.
+- **Braiins Pool**: make a **read-only** API token in your Braiins Pool account settings and paste it in. Houston keeps it on the Apollo and never shows it again. Braiins credits rewards per day in UTC, so its days can be a few hours off from yours.
+
+Houston checks the pool once an hour. Below 100% can be luck, stale or rejected shares, or a fee Houston doesn't know about (set your pool fee under Mining economics › More).
+
 ## Alerts on your phone
+
+> **A block!** If your solo pool finds a block, every device with Houston open shows a full-screen celebration (once per device), on top of the alert. Settings › Alerts › *Preview the block-found celebration* shows what it looks like.
 
 Houston tells you when:
 
@@ -177,7 +197,11 @@ Houston's alerts for a stopped miner or node, and for an unreachable Apollo, sta
 
 ## Updating Houston
 
-Copy the new `houston` folder over and run the installer again. Your schedule, history and settings are kept:
+**From Houston 2.7.0 on, one tap**: Settings › Houston (this app) shows when a new version is out (Houston checks GitHub twice a day, and you can *Check for updates*), with what's new. *Update* installs it in about a minute. Mining and the schedule aren't affected; only Houston restarts. If the new version doesn't start, the previous one comes back by itself.
+
+How it stays safe: Houston runs without any privileges, so it can't update itself. It only leaves the version number in its own folder. A small root helper that the installer adds (`/opt/houston/houston-update.sh`, started by systemd's `houston-update.path`) then downloads that release from Houston's GitHub repository itself, over HTTPS, checks it (version number, no links or special files, the code parses), installs only Houston's own files, restarts Houston, and rolls back if it doesn't answer. It never runs anything from the download, and it never changes Houston's sandbox or the installer.
+
+**The first time** (from 2.6 or older), or to change installer options, copy the new `houston` folder over and run the installer again. Your schedule, history and settings are kept:
 
 ```bash
 scp -r houston futurebit@192.168.1.50:~/
@@ -207,11 +231,15 @@ In `/var/lib/houston` (readable only by Houston's own service account):
 |---|---|
 | `schedule.json` | your schedule and its time zone |
 | `auth.json` | an Apollo sign-in (the same kind your browser keeps), so the schedule, history, alerts and shortcuts can work while you're away. Created when you sign in to Houston |
-| `settings.json` | units, electricity price, alert topic, other Apollos, the shortcut key |
+| `settings.json` | units, electricity price, alert topic, other Apollos, the shortcut key, your pool's address or token, an OpenEI key if you added one |
 | `history.json` | one reading per minute for 7 days |
 | `push.json` | Houston's notification key and the devices you turned notifications on for (their browser push addresses) |
 | `activity.json` | the last 60 events |
 | `econ.json` | the network numbers, weather and geocoded place for Mining economics (your ZIP code or town lives in `settings.json`) |
+| `daily.json` | one small record per day (about 3 years) for the monthly report |
+| `pool.json` | your pool's daily earnings, payouts and balance (mode 600) |
+| `blocks.json` | solo blocks your Apollo found, for the celebration |
+| `update-request`, `houston-update-status.json` | only while a Houston update runs: the version you asked for, and the updater's progress |
 | `update.json` | the Apollo software update Houston started (versions and start time, until it finishes) and the last version it told you about |
 
 To revoke everything, see [SECURITY.md](../SECURITY.md#lost-phone).
