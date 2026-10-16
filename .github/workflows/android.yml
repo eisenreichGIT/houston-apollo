@@ -7,6 +7,7 @@ name: Android app
 
 on:
   push:
+    branches: ["main"]
     paths: ["android/**", ".github/workflows/android.yml"]
     tags: ["v*"]
   workflow_dispatch:
@@ -16,7 +17,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04        # has the Android SDK preinstalled
     steps:
       - uses: actions/checkout@v4
 
@@ -25,7 +26,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      - name: Android SDK (preinstalled on the runner; make sure platform 34 is there)
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKM" --licenses >/dev/null || true
+          "$SDKM" --install "platforms;android-34" "build-tools;34.0.0" >/dev/null
+          echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
       - uses: gradle/actions/setup-gradle@v4
         with:
@@ -67,5 +73,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           cp "$RUNNER_TEMP/Houston.apk" "$RUNNER_TEMP/Houston-${GITHUB_REF_NAME}.apk"
-          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Houston ${GITHUB_REF_NAME#v}" --notes "See CHANGELOG.md"
+          # Release notes = this version's section of CHANGELOG.md (Houston shows them under "What's new")
+          awk -v v="## ${GITHUB_REF_NAME#v} " 'index($0, v) == 1 {on=1; next} /^## / && on {exit} on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          [ -s "$RUNNER_TEMP/notes.md" ] || echo "See CHANGELOG.md" > "$RUNNER_TEMP/notes.md"
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "Houston ${GITHUB_REF_NAME#v}" --notes-file "$RUNNER_TEMP/notes.md"
           gh release upload "$GITHUB_REF_NAME" "$RUNNER_TEMP/Houston-${GITHUB_REF_NAME}.apk" --clobber
