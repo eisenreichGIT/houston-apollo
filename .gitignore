@@ -4,3 +4,15 @@ houston/state/
 .DS_Store
 Thumbs.db
 *.zip
+# Android build output and local settings
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+*.jks
+*.keystore
+# iPhone: the Xcode project is generated from ios/project.yml (xcodegen)
+ios/Houston.xcodeproj/
+ios/Houston/Info.plist
+ios/HoustonWidget/Info.plist
+xcuserdata/

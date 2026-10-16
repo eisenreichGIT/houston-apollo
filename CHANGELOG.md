@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.6.0 (2026-10-15)
+
+- **Mining economics** on Stats: what your Apollo earns, costs and (in winter) saves you in heat, **per day, in plain words**: *Your Apollo pays for itself right now*, or *It costs $0.58 a day more than it earns*. Every mode side by side, the break-even electricity price and bitcoin price, and the mode that earns the most right now.
+- **Your real numbers, not a calculator's**: hashrate and watts are Houston's own readings per mode over the last 7 days, the running time is real, fees come from the last 144 blocks, and difficulty growth from the 6-month trend. A table shows where the usual calculators' assumptions differ, and *How this is worked out* shows the formula. Checked against published hashprice.
+- **The last 12 months**: what each mode, and the autopilot, would have earned, day by day, with that day's real difficulty, bitcoin price, your electricity prices and the outdoor temperature.
+- **Next 24 hours**: the best mode hour by hour, from your prices and the weather forecast.
+- **Time-of-use electricity**: weekday, weekend or every-day prices for any hours (overnight works), in Settings › Mining economics.
+- **Heat as a byproduct**: if the Apollo warms a room you heat, its heat counts at what your heating would have paid for it (electric, heat pump, gas, propane or oil) whenever it's cold enough outside. Outdoor temperature from Open-Meteo for your ZIP code or town.
+- **Autopilot** (off by default): *Suggest* sends an alert when another mode (or stopping) would be better for an hour or more; *Run* switches modes by itself, at most once an hour, only when it saves at least your minimum a day, never right after your own change (it waits 2 hours), and never during an Apollo update. You pick which modes it may use and whether it may stop the miner. The schedule pauses while it runs. Its changes are logged in Activity as *Autopilot*, with the reason.
+- New alert: **Mining economics** (Settings › Alerts): when difficulty changes, and when mining starts or stops paying.
+
+## 2.5.0 (2026-10-14)
+
+- **Android app** (beta, `android/`): Houston full screen, plus a **home-screen widget** (bitcoin price, status, hashrate, mode), a **quick-settings tile** (status; Start, Stop and the power modes) and Houston's **alerts as Android notifications** (checked every 15 minutes). Download the APK from GitHub Releases; GitHub builds it automatically. See [docs/apps.md](docs/apps.md).
+- **iPhone app** (beta, `ios/`): Houston full screen, a **home-screen widget**, and **Siri**: “Hey Siri, Houston status”, “Switch Houston to Whisper”. Built and installed with Xcode on a Mac (see [docs/apps.md](docs/apps.md)).
+- Houston: a key-protected alerts feed for the apps (`/api/v1/alerts`); the power mode is now part of the public status (`/api/glance`) for widgets; inside the apps, Settings shows an **App settings** card, and browser-only features (web notifications, log download) are hidden.
+- The bitcoin icon is the classic Bitcoin coin, centered; the Home price line is cleaner; Power mode sits above the next scheduled change.
+
 ## 2.4.0 (2026-10-13)
 
 - **Whisper mode** (Apollo II and original Apollo, Houston only): about half of Eco's power, the quietest and coolest way to mine. Measured on an Apollo II: 107 W and 2.9 TH/s vs Eco's 209 W and 5.5 TH/s, slightly more efficient (36.8 vs 38.5 W/TH). It uses the Apollo's own custom mode at the lowest settings FutureBit's dashboard allows (power 30%, frequency 25), so the dashboard shows it as Custom. Whisper works everywhere modes do: Home, the schedule, charts and energy by mode, Siri and shortcuts (`whisper`), and `#whisper` links.

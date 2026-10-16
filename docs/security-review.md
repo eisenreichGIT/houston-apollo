@@ -4,7 +4,7 @@ This page is for anyone deciding whether to run Houston on their Apollo. It expl
 
 > Short version: Houston keeps everything on your Apollo and your own network. It has no account, no cloud service and no tracking. Passwords never leave your devices except to sign in to your own Apollo. The one thing it stores that you should protect is the Apollo sign-in it keeps so your schedule can run.
 
-Last full review: version 2.2.0 (October 2026). [Findings fixed in that review](#findings-fixed-in-the-220-review) are listed at the end. Version 2.2.1 adds the network, market and news cards; version 2.3.0 adds Apollo software updates, the front light switch and the log viewer; version 2.4.0 adds Whisper mode (a custom-mode setting, like the dashboard's) and faster price updates. Their sources and protections are covered below.
+Last full review: version 2.2.0 (October 2026). [Findings fixed in that review](#findings-fixed-in-the-220-review) are listed at the end. Version 2.2.1 adds the network, market and news cards; version 2.3.0 adds Apollo software updates, the front light switch and the log viewer; version 2.4.0 adds Whisper mode (a custom-mode setting, like the dashboard's) and faster price updates; version 2.5.0 adds the Android and iPhone apps (below). Their sources and protections are covered below.
 
 ## What you're trusting Houston with
 
@@ -54,7 +54,7 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | `/api/device`, `/api/glance`, `/api/price`, `/api/market` | No | Model, version and time zone; live status readings; cached bitcoin price; cached network, market and news data (all public information) |
 | `/api/graphql` | The Apollo's own rules | Passes requests to the Apollo API unchanged, only when sent as JSON. Sign-in attempts are rate limited here |
 | `/api/schedule`, `/api/settings`, `/api/activity`, `/api/history`, `/api/fleet`, `/api/auth`, `/api/discover`, `/api/automation`, `/api/push`, `/api/alerts/test`, `/api/apollo-update` (version check; POST starts the update), `/api/houston-log` | Yes: a valid Apollo sign-in, checked with the Apollo | Houston's own features |
-| `/api/v1/say`, `/api/v1/status`, `/api/v1/action/<action>` | The shortcut key | Status, plus start / stop / modes / node start-stop only |
+| `/api/v1/say`, `/api/v1/status`, `/api/v1/action/<action>`, `/api/v1/alerts` | The shortcut key | Status, start / stop / modes / node start-stop, and the list of alerts Houston sent (for the apps) |
 
 **Outbound connections** (Houston's, never the browser's: the app's security policy blocks the browser from contacting anything except Houston)
 
@@ -63,6 +63,8 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | `127.0.0.1:5000` (the Apollo API) and `127.0.0.1:3000` (the Apollo's model info) | Always | Your requests and the stored sign-in |
 | `api.kraken.com`, `api.exchange.coinbase.com` | Every 5 seconds while Houston is open on a device, once a minute otherwise, plus price history for the chosen time frame (cached, from every minute for 1H to daily for ALL); only if the bitcoin price is on (Settings) | Nothing about you: public price requests |
 | `mempool.space`, `api.coingecko.com`, `api.alternative.me`, `bitcoinmagazine.com` | Every 5 to 60 minutes, if *Network, market & news* is on (Settings) | Nothing about you: public data requests (the currency you picked, for market cap and volume) |
+| `mempool.space` (mining) | Every 30 minutes, if Mining economics is on | Nothing about you: difficulty history, block rewards and the next adjustment |
+| `geocoding-api.open-meteo.com`, `api.open-meteo.com`, `archive-api.open-meteo.com` | When you save a location, then every 30 minutes (forecast) and every 3 days (the past year's temperatures), only if you set up heat in Mining economics | The ZIP code or town you typed (to look it up); then only its coordinates rounded to about 1 km. No account or key |
 | `raw.githubusercontent.com` (FutureBit's dashboard repository) | Not Houston itself: when Houston asks for the latest version (every 6 hours, and when you check), the Apollo's own API looks it up there, as it does for the dashboard. *Update* makes FutureBit's updater download from FutureBit's GitHub | Nothing about you: a public file request |
 | `ntfy.sh` (or your server) | When an alert fires, if you set a topic | The alert title and message |
 | Apple / Google / Mozilla / Microsoft push services | When an alert fires, if a device has notifications on | The encrypted alert, a signed header and a time-to-live |
@@ -71,6 +73,17 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | `tailscale.com` | Only during installation | The official Tailscale install script and packages |
 
 Houston has no telemetry, analytics or account, and doesn't check for updates to itself.
+
+## The Android and iPhone apps
+
+The apps show the Houston page from your Apollo in a full-screen web view, and add a widget, an Android quick tile and notifications, and Siri on iPhone. They talk only to your Apollo (the address you enter); there's no app server.
+
+- **What they store**: the Apollo's address and Houston's **shortcut key**, in the app's private storage. The key allows status, start/stop, mode changes and the alert list, not settings or the schedule. The Houston page inside the app keeps its sign-in in the web view's storage, like a browser. Revoke the app by making a new shortcut key in Houston.
+- **How they get the key**: after you sign in, the app asks; if you agree, it reads Houston's sign-in from the page and asks Houston for the key (creating one if there's none).
+- **Plain http**: like the browser at home, the apps allow plain http to reach Houston on your network (Android network security config; iPhone App Transport Security exception). Use Houston's https address where you can.
+- **Links**: anything that isn't your Apollo (news, GitHub, wallet links) opens in your browser, not inside the app.
+- **No third-party libraries**: the Android app uses only Android's own APIs (Java); the iPhone app only Apple's (SwiftUI, WidgetKit, App Intents). Both build on GitHub from the source in this repository.
+- **Background access**: the Android app checks Houston every 15 minutes (widget and alerts) when the phone can reach the Apollo. The iPhone widget reads Houston's public status (`/api/glance`, `/api/price`) about every 15 minutes.
 
 ## How the code is built
 

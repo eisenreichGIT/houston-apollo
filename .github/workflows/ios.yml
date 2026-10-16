@@ -1,0 +1,24 @@
+# Checks that the Houston iPhone app (ios/) builds, on GitHub's Mac servers. It doesn't sign or distribute
+# the app: iPhones only install apps through Xcode, TestFlight or the App Store (see docs/apps.md).
+name: iPhone app
+
+on:
+  push:
+    paths: ["ios/**", ".github/workflows/ios.yml"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate the Xcode project
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen
+      - name: Build for the simulator (no signing)
+        run: |
+          cd ios
+          xcodebuild -project Houston.xcodeproj -scheme Houston -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build | tail -40
+          test ${PIPESTATUS[0]} -eq 0

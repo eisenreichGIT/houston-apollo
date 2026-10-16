@@ -1,0 +1,48 @@
+plugins {
+    id "com.android.application"
+}
+
+// Release signing comes from environment variables (GitHub secrets), so the key never sits in the repo.
+def ks = System.getenv("HOUSTON_KEYSTORE")
+
+android {
+    namespace "io.github.eisenreichgit.houston"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "io.github.eisenreichgit.houston"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    signingConfigs {
+        release {
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("HOUSTON_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("HOUSTON_KEY_ALIAS") ?: "houston"
+                keyPassword System.getenv("HOUSTON_KEY_PASSWORD") ?: System.getenv("HOUSTON_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (ks) signingConfig signingConfigs.release
+        }
+    }
+
+    // Not a Play Store build: don't fail release builds on Play-only checks (like the yearly target-SDK rule)
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

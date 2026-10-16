@@ -88,6 +88,23 @@ It uses the Apollo's built-in custom mode at the lowest settings FutureBit's das
 
 Use it like any other mode: on Home, as the normal mode or a window in the schedule, in shortcuts (`whisper`) and as a `#whisper` link. The Apollo III doesn't need it: it has Super Eco and custom targets down to 5 TH/s.
 
+## Mining economics
+
+Stats › *Mining economics* works out what your Apollo really earns and costs, from its own readings rather than the spec sheet. Add your electricity price (Settings › Electricity) to turn it on.
+
+- **Right now**: net per day, earned vs electricity vs heat, every mode side by side and the break-even electricity price.
+- **Next 24 hours**: the best mode for each hour, from your prices and the forecast.
+- **The last 12 months**: what each mode and the autopilot would have earned, priced day by day with that day's real difficulty and bitcoin price.
+- **Outlook**: the difficulty trend and what the next 12 months look like next to a calculator that assumes difficulty stays flat.
+
+Settings › *Mining economics*:
+
+- **Time-of-use prices**: add a price for certain hours (weekdays, weekends or every day; 23:00 to 07:00 works). Other hours use your normal price.
+- **Heat**: if the Apollo sits in a room you heat, pick your heating (electric, heat pump, gas, propane or oil), its price and efficiency, the outdoor temperature below which you heat, and your ZIP code or town. Houston then counts the heat it makes at what your heating would have paid for it, whenever it's that cold outside.
+- **Autopilot**: *Suggest* alerts you when another mode would be better; *Run* switches by itself (at most once an hour, only when it saves at least your minimum, never within 2 hours of your own change, and it pauses the schedule). Choose the modes it may use and whether it may stop the miner.
+
+The earnings are an expected value: a pool pays about that (minus its fee); solo mining pays nothing until you find a block. Not financial advice.
+
 ## Alerts on your phone
 
 Houston tells you when:
@@ -140,6 +157,10 @@ Houston uses **[ntfy](https://ntfy.sh)**, a free push-notification app (Android,
 
 > The topic works like a password: anyone who knows it can read your alerts. Make it hard to guess (the random button does). Prefer your own server? Enter it under *Your own ntfy server*.
 
+## Android and iPhone apps
+
+Optional apps add a home-screen widget, an Android quick-settings tile and notifications, and Siri on iPhone. They show this same Houston from your Apollo. See [apps.md](apps.md).
+
 ## Several Apollos
 
 Install Houston on each Apollo (same two commands, with that Apollo's address). Then add the others in Settings › *Your Apollos* on any of them: Home shows all of them, with a link to each one's Houston. An Apollo without Houston still shows its status (read from its own API) with a link to its dashboard.
@@ -190,6 +211,7 @@ In `/var/lib/houston` (readable only by Houston's own service account):
 | `history.json` | one reading per minute for 7 days |
 | `push.json` | Houston's notification key and the devices you turned notifications on for (their browser push addresses) |
 | `activity.json` | the last 60 events |
+| `econ.json` | the network numbers, weather and geocoded place for Mining economics (your ZIP code or town lives in `settings.json`) |
 | `update.json` | the Apollo software update Houston started (versions and start time, until it finishes) and the last version it told you about |
 
 To revoke everything, see [SECURITY.md](../SECURITY.md#lost-phone).

@@ -3,6 +3,8 @@
   'use strict';
   const $ = id => document.getElementById(id);
   const KEY = 'apolloToken';               // same key as the old Apollo Remote page: no sign-in needed after upgrading
+  // Inside the Houston Android or iPhone app (a full-screen view of this same page)
+  const IN_APP = /HoustonApp\//.test(navigator.userAgent), APP_IOS = IN_APP && /\(iOS\)/.test(navigator.userAgent);
   const BROWSER_TZ = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { return null; } })();
 
   // ---------------------------------------------------------------- icons
@@ -223,7 +225,7 @@
     clearInterval(statsTimer); clearInterval(fleetTimer); clearInterval(logTimer);
     if (id === 'control') { refresh(true); loadFleet(); fleetTimer = setInterval(() => { if (!document.hidden) loadFleet(); }, 30000); }
     if (id === 'stats') { loadStats(); statsTimer = setInterval(() => { if (!document.hidden) loadStats(true); }, 60000); }
-    if (id === 'schedule') loadSchedule();
+    if (id === 'schedule') { loadSchedule(); $('apBanner').classList.toggle('hidden', !(settings && settings.econ && settings.econ.autopilot && settings.econ.autopilot.mode === 'run')); }
     if (id === 'activity') { if (opts && opts.pane) actPane = opts.pane; showPane(); }
     if (id === 'settings') renderSettings();
   }
@@ -854,7 +856,7 @@
           el('span', { class: 'meta' },
             valid ? d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '', el('br'),
             valid ? d.toLocaleDateString([], { month: 'short', day: 'numeric' }) : '', el('br'),
-            el('span', { class: 'src' }, { app: 'You', alert: 'Alert', shortcut: 'Shortcut', houston: 'Houston' }[it.source] || 'Schedule'))));
+            el('span', { class: 'src' }, { app: 'You', alert: 'Alert', shortcut: 'Shortcut', houston: 'Houston', autopilot: 'Autopilot' }[it.source] || 'Schedule'))));
       }
     } catch (e) {
       if (handleAuthError(e)) return;
@@ -1133,12 +1135,17 @@
     $('hotUnit').textContent = '°' + units;
     $('ntfyServer').value = a.server && a.server !== 'https://ntfy.sh' ? a.server : '';
     renderPeers(settings.apollos || []);
+    renderEconSettings();
     renderAutomation();
     renderPush();
     $('abVer').textContent = device ? device.version : '–';
     $('abModel').textContent = III ? 'Apollo III' : device ? 'Apollo II' : '–';
     $('abTz').textContent = device && device.tz ? device.tz : '–';
     $('abAuth').textContent = 'On';
+    $('appCard').classList.toggle('hidden', !IN_APP);
+    if (IN_APP) $('appNote').textContent = APP_IOS
+      ? 'You\'re using the Houston iPhone app. App settings: Houston\'s address and Siri.'
+      : 'You\'re using the Houston Android app. App settings: Houston\'s address, notifications, the widget and the quick tile.';
     loadUpdate(false); loadLed();
   }
 
@@ -1207,7 +1214,9 @@
     const devs = (pushInfo && pushInfo.devices) || [];
     const mine = !!myPushId && devs.some(d => d.id === myPushId);
     let why = '';
-    if (!pushInfo) why = 'Update Houston on the Apollo to use this.';
+    if (IN_APP) why = APP_IOS ? 'Inside the iPhone app, use the ntfy app below for alerts (or Houston from the Home Screen with its https address).'
+      : 'In the Houston app, alerts show up as Android notifications: see App settings at the top of Settings.';
+    else if (!pushInfo) why = 'Update Houston on the Apollo to use this.';
     else if (!pushInfo.available) why = 'The Apollo needs one more package for this: run the Houston installer again.';
     else if (!window.isSecureContext) why = 'Needs Houston\'s secure address (https://…): phones only allow notifications on secure pages. See “Notifications without ntfy” in docs/houston.md.';
     else if (isIOS && !standalone()) why = 'On iPhone and iPad: add Houston to your Home Screen (Share › Add to Home Screen), open it from there, then turn this on. Needs iOS 16.4 or later.';
@@ -1330,6 +1339,14 @@
     try { await navigator.clipboard.writeText(autoKey); toast('Key copied.', 'ok'); }
     catch (e) { const r = document.createRange(); r.selectNodeContents($('autoKey')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); toast('Key selected: copy it with your device\'s copy command.'); }
   });
+
+  $('appSettings').addEventListener('click', () => {
+    try {
+      if (window.HoustonAndroid) window.HoustonAndroid.openSettings();
+      else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.houston) window.webkit.messageHandlers.houston.postMessage('settings');
+    } catch (e) { toast('Open the app\'s settings from the app.', 'err'); }
+  });
+  if (IN_APP) $('logSave').classList.add('hidden');      // the app's web view can't save files; Copy still works
 
   $('copyTip').addEventListener('click', async () => {
     const addr = $('tipAddr').textContent.trim();
@@ -1481,6 +1498,264 @@
     }
   }
 
+  // ---------------------------------------------------------------- mining economics (Stats)
+  let econ = null;
+  const cur$ = () => (settings && settings.currency) || '$';
+  const fmtMoney = (v, d) => v == null || isNaN(v) ? '–' : (v < 0 ? '−' : '') + cur$() + Math.abs(v).toFixed(d == null ? 2 : d);
+  const fmtSigned = (v, d) => v == null || isNaN(v) ? '–' : (v > 0 ? '+' : v < 0 ? '−' : '') + cur$() + Math.abs(v).toFixed(d == null ? 2 : d);
+  const fmtRate = r => r == null ? '–' : (r < 1 ? (r * 100).toFixed(1) + '¢' : cur$() + r.toFixed(2));
+  const econModeName = m => m === 'stop' ? 'Stopped' : modeName(m);
+  const econColor = m => m === 'stop' ? 'var(--muted)' : modeColor(m);
+
+  async function loadEcon() {
+    if (!settings || (settings.econ && settings.econ.enabled === false)) { $('econSection').classList.add('hidden'); return; }
+    try { econ = await rest('GET', 'api/economics'); } catch (e) { if (handleAuthError(e)) return; econ = null; }
+    renderEcon();
+  }
+
+  function renderEcon() {
+    const sec = $('econSection');
+    if (!econ || econ.enabled === false) { sec.classList.add('hidden'); return; }
+    sec.classList.remove('hidden');
+    const miss = $('econMissing'), body = $('econBody');
+    if (econ.missing) {
+      miss.classList.remove('hidden'); body.classList.add('hidden'); $('econHow').textContent = ''; miss.textContent = '';
+      if (econ.missing === 'rate') miss.append('Add your electricity price to see what your Apollo earns and costs. ', el('button', { class: 'linkbtn', type: 'button', onclick: () => go('settings') }, 'Add it in Settings'));
+      else miss.append(econ.errors && econ.errors.network ? 'Can\'t get the network numbers right now (' + econ.errors.network + '). Houston keeps trying.' : 'Getting the network numbers and bitcoin price… this takes a minute after Houston starts.');
+      return;
+    }
+    miss.classList.add('hidden'); body.classList.remove('hidden');
+    const now = econ.now, modes = econ.modes, ref = now.mode && modes[now.mode] ? now.mode : null;
+    const show = ref || econ.autopilot.best !== 'stop' && econ.autopilot.best || 'eco';
+    const m = modes[show] || modes[Object.keys(modes)[0]];
+    // right now
+    const netEl = $('econNet');
+    netEl.textContent = fmtSigned(m.net) ; netEl.className = m.net >= 0 ? 'pos' : 'neg';
+    $('econNetLbl').textContent = 'a day' + (ref ? ' in ' + modeName(ref) : ' in ' + modeName(show) + (now.status === 'offline' ? ' (stopped now)' : ''));
+    $('econNowSub').textContent = 'at ' + fmtRate(now.rate) + '/kWh' + (now.tempC != null ? ' · ' + fmtTemp(now.tempC) + ' outside' : '');
+    const say = $('econSay'); say.textContent = '';
+    if (m.net >= 0) say.append('Your Apollo ', el('b', {}, 'pays for itself'), ' right now' + (m.heat > 0 ? ', counting the heat it puts into your home.' : '.'));
+    else if (m.heat > 0) say.append('Counting its heat, running costs you ', el('b', {}, fmtMoney(-m.net) + ' a day'), ' more than it earns.');
+    else say.append('It costs ', el('b', {}, fmtMoney(-m.net) + ' a day'), ' more in electricity than it earns' + (econ.settings.heat.type === 'none' ? '. If it warms a room you heat, add your heating in Settings.' : ' (it\'s warm enough outside that its heat isn\'t needed).'));
+    const sp = $('econSplit'); sp.textContent = '';
+    sp.append(el('div', {}, el('b', {}, fmtMoney(m.revenue)), el('span', {}, 'earned · ' + m.sats.toLocaleString() + ' sats')),
+      el('div', {}, el('b', {}, fmtMoney(m.cost)), el('span', {}, 'electricity')),
+      el('div', {}, el('b', {}, m.heat > 0 ? fmtMoney(m.heat) : '–'), el('span', {}, m.heat > 0 ? 'heat it saves' : 'heat (not counted)')));
+    const ul = $('econModes'); ul.textContent = '';
+    const list = Object.keys(modes), mx = Math.max(0.01, ...list.map(k => Math.abs(modes[k].net)));
+    const best = econ.autopilot.best;
+    for (const k of list) {
+      const v = modes[k].net, w = Math.abs(v) / mx * 50;
+      ul.append(el('li', { class: (k === ref ? 'now ' : '') + (k === best ? 'best' : '') },
+        el('span', { class: 'lbl' }, el('i', { style: 'background:' + modeColor(k) }), modeName(k) + (k === ref ? ' · now' : '')),
+        el('span', { class: 'trk' }, el('span', { class: 'bar', style: `width:${Math.max(1, w)}%;${v >= 0 ? 'left:50%' : 'right:50%'};background:${modeColor(k)}` })),
+        el('span', { class: 'val ' + (v >= 0 ? 'pos' : 'neg'), style: 'color:var(' + (v >= 0 ? '--ok-text' : '--danger-text') + ')' }, fmtSigned(v))));
+    }
+    const be = m.breakevenRate;
+    $('econBreakeven').textContent = (be == null ? modeName(show) + ' pays at any electricity price while your electric heat would be on.' :
+      modeName(show) + ' breaks even at ' + fmtRate(be) + '/kWh' + (now.heating ? ' (heat counted)' : '') + '.')
+      + (m.breakevenPrice > 0 ? ' At your price, bitcoin would need to be ' + fmtFiat(m.breakevenPrice, econ.fiat) + '.' : '')
+      + (best && best !== ref ? ' ★ = the autopilot\'s pick right now' + ((econ.settings.autopilot.modes || []).length ? ' (from the modes you allow it)' : '') + '.' : '');
+    // next 24 hours
+    drawEconDay($('chEconDay'), econ.hours);
+    const seen = [...new Set(econ.hours.map(h => h.best))];
+    const lg = $('econDayLegend'); lg.textContent = '';
+    seen.forEach(b => lg.append(el('span', {}, el('i', { style: 'background:' + econColor(b) }), econModeName(b))));
+    const ap = econ.autopilot, st = ap.state || {};
+    $('econAuto').textContent = ap.mode === 'run' ? 'Autopilot is running: it switches to the best mode when that saves at least ' + fmtMoney(econ.settings.autopilot.minGain) + ' a day, at most once an hour' + (st.paused ? ' (paused for 2 hours after your own change)' : '') + '.'
+      : ap.mode === 'suggest' ? 'Autopilot suggestions are on: Houston tells you when another mode would be better for an hour or more.'
+      : 'Bars show the best mode for each hour. The autopilot (Settings › Mining economics) can follow it for you.';
+    // last 12 months
+    const bt = econ.backtest, tb = $('econYearTable'); tb.textContent = '';
+    if (bt) {
+      $('econYearCard').classList.remove('hidden');
+      drawEconYear($('chEconYear'), bt);
+      tb.append(el('tr', {}, el('th', {}, 'Run it in'), el('th', {}, 'Earned'), el('th', {}, 'Power'), el('th', {}, 'Heat'), el('th', {}, 'Net')));
+      const order = ['auto', ...Object.keys(bt.strategies).filter(k => k !== 'auto')];
+      for (const k of order) {
+        const s2 = bt.strategies[k];
+        tb.append(el('tr', {}, el('td', {}, k === 'auto' ? 'Autopilot' : modeName(k)), el('td', {}, fmtMoney(s2.revenue, 0)), el('td', {}, fmtMoney(s2.cost, 0)),
+          el('td', {}, s2.heat ? fmtMoney(s2.heat, 0) : '–'), el('td', { class: s2.net >= 0 ? 'pos' : 'neg' }, fmtSigned(s2.net, 0))));
+      }
+      const hrs = bt.strategies.auto.hours || {}, tot = Object.values(hrs).reduce((a, b) => a + b, 0) || 1;
+      const mix = Object.entries(hrs).filter(e => e[1] / tot >= 0.005).sort((a, b) => b[1] - a[1]).map(([k, v]) => econModeName(k) + ' ' + Math.round(v / tot * 100) + '%').join(', ');
+      $('econYearNote').textContent = 'Each day priced with that day\'s real difficulty and bitcoin price, your electricity prices hour by hour' + (bt.heat ? ', and heat from that day\'s outdoor temperature' : '') + '. Autopilot would have run: ' + mix + '.';
+    } else $('econYearCard').classList.add('hidden');
+    // outlook
+    const o = econ.outlook, ok = $('econOutlook'); ok.textContent = '';
+    const kv = (k, v, sub) => ok.append(el('div', {}, el('span', {}, k), el('b', {}, v), sub ? el('span', { class: 'sub' }, sub) : null));
+    kv('Difficulty trend', o.growthMonth == null ? '–' : (o.growthMonth >= 0 ? '+' : '−') + Math.abs(o.growthMonth * 100).toFixed(1) + '% a month', 'the same hashrate earns that much less each month');
+    kv('Next adjustment', o.nextChange == null ? '–' : (o.nextChange >= 0 ? '+' : '−') + Math.abs(o.nextChange).toFixed(1) + '%', o.retargetTime ? 'around ' + new Date(o.retargetTime * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' }) : '');
+    kv('Next 12 months in ' + modeName(o.mode), fmtMoney(o.year.houston, 0) + ' earned', 'a calculator would say ' + fmtMoney(o.year.calculator, 0) + ' (no difficulty growth), at today\'s price');
+    kv('Hashprice', fmtFiat(econ.hashprice, econ.fiat) + '/PH/day', fmtMoney(econ.btcPerThDay * econ.price, 3) + ' per TH/s a day');
+    // calculators vs your Apollo
+    const r = $('econReality'); r.textContent = '';
+    r.append(el('tr', {}, el('th', {}, ''), el('th', {}, 'Calculators'), el('th', {}, 'Houston')));
+    const row = (a, b, c) => r.append(el('tr', {}, el('td', {}, a), el('td', {}, b), el('td', {}, c)));
+    row('Hashrate', 'the spec sheet', m.measured ? m.ths.toFixed(2) + ' TH/s measured' : m.ths.toFixed(2) + ' TH/s (estimate)');
+    row('Power', 'the spec sheet', Math.round(m.watts) + ' W' + (m.measured ? ' measured' : '') + (econ.settings.extraW ? ' + ' + econ.settings.extraW + ' W' : ''));
+    row('Running time', '100%', econ.uptime != null ? Math.round(econ.uptime * 100) + '% (last 7 days)' : '–');
+    row('Fees', 'often ignored', econ.network.feeShare != null ? (econ.network.feeShare * 100).toFixed(1) + '% of each block (last 144)' : '–');
+    row('Difficulty', 'stays the same', o.growthMonth != null ? (o.growthMonth * 100).toFixed(1) + '%/month (6-month trend)' : '–');
+    row('Electricity', 'one price', econ.settings.tou.length ? econ.settings.tou.length + ' time-of-use price' + (econ.settings.tou.length > 1 ? 's' : '') : fmtRate(econ.rate) + '/kWh');
+    row('Heat', 'wasted', econ.settings.heat.type === 'none' ? 'not counted' : 'counted below ' + fmtTemp(econ.settings.heat.balanceC) + ' outside');
+    // how
+    const how = $('econHow'); how.textContent = '';
+    [
+      'Earnings = your hashrate ÷ (difficulty × 2³²) × 86,400 seconds × (block subsidy ' + econ.network.subsidy + ' BTC + average fees ' + econ.network.feeBtc + ' BTC) × the bitcoin price. That\'s the expected value: with a pool you get about that, minus its fee; solo, you get nothing until you find a whole block, which is rare.',
+      'Difficulty ' + (econ.network.difficulty / 1e12).toFixed(2) + ' T and fees from mempool.space; the price from Houston\'s price feed (' + econ.fiat + '). Electricity prices are taken to be in ' + econ.fiat + ' too.',
+      'Hashrate and watts per mode are Houston\'s own readings from the last 7 days (modes it hasn\'t seen yet use starting estimates). The miner reports its hashboard\'s power; add the rest under “More” in Settings for the wall total.',
+      'Heat: nearly all of the electricity becomes heat. When it\'s colder outside than your setting, each kWh counts at what your heating would have paid for the same heat (electric: your electricity price; heat pump: that ÷ its COP; gas, propane, oil: fuel price ÷ energy content ÷ furnace efficiency). It only counts if the Apollo is in a room you heat.' + (econ.place ? ' Outdoor temperature for ' + econ.place + ' from Open-Meteo.' : ''),
+      'The 12-month look-back uses each day\'s real difficulty and bitcoin price, with today\'s measured hashrate and watts and today\'s fee level (daily fee history isn\'t used).',
+      'Not financial advice: it\'s a model, and bitcoin\'s price moves a lot.',
+    ].forEach(t => how.append(el('li', {}, t)));
+  }
+
+  function drawEconDay(host, hours) {
+    host.textContent = '';
+    if (!hours || !hours.length) return;
+    const W = Math.max(260, host.clientWidth || 320), H = 160, L = 46, R = 8, T = 10, B = 22;
+    const vals = hours.map(h => h.net);
+    let lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+    if (hi - lo < 1e-6) hi = lo + 0.01;
+    const ticks = niceTicks(lo, hi, 4); lo = ticks[0]; hi = ticks[ticks.length - 1];
+    const y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const bw = (W - L - R) / hours.length;
+    const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': host.getAttribute('aria-label') });
+    ticks.forEach(v => {
+      svg.append(sv('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), style: 'stroke:var(--line)', 'stroke-width': v === 0 ? 1.5 : 1 }));
+      const t = sv('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 10.5 }); t.textContent = fmtSigned(v, Math.abs(hi - lo) < 0.2 ? 3 : 2).replace(cur$(), ''); svg.append(t);
+    });
+    hours.forEach((h, i) => {
+      const x = L + i * bw, top = Math.min(y(h.net), y(0)), ht = Math.max(1, Math.abs(y(h.net) - y(0)));
+      svg.append(sv('rect', { x: x + 1, y: top, width: Math.max(1, bw - 2), height: ht, rx: 2, style: 'fill:' + econColor(h.best) + (h.net < 0 ? ';opacity:.55' : '') }));
+      const d = new Date(h.t * 1000);
+      if (d.getHours() % 6 === 0) { const tx = sv('text', { x: x + bw / 2, y: H - 6, 'text-anchor': 'middle', style: 'fill:var(--muted)', 'font-size': 10.5 }); tx.textContent = d.toLocaleTimeString([], { hour: 'numeric' }); svg.append(tx); }
+    });
+    host.append(svg);
+    const tip = el('div', { class: 'tip hidden' }); host.append(tip);
+    const hit = sv('rect', { x: L, y: 0, width: W - L - R, height: H - B, fill: 'transparent' }); svg.append(hit);
+    let idx = -1;
+    const showI = i => {
+      if (i < 0 || i >= hours.length) return; idx = i;
+      const h = hours[i], d = new Date(h.t * 1000);
+      tip.textContent = '';
+      tip.append(el('div', { class: 'tt' }, d.toLocaleTimeString([], { hour: 'numeric' }) + ' · best: ' + econModeName(h.best)),
+        el('div', { class: 'row' }, el('b', {}, fmtSigned(h.net, 3)), ' an hour'),
+        el('div', { class: 'row' }, 'Electricity ' + fmtRate(h.rate) + '/kWh' + (h.tempC != null ? ' · ' + fmtTemp(h.tempC) : '')));
+      tip.classList.remove('hidden');
+      const tw = tip.offsetWidth, px = (L + (i + 0.5) * bw) / W * host.clientWidth;
+      tip.style.left = Math.min(host.clientWidth - tw, Math.max(0, px - tw / 2)) + 'px'; tip.style.top = '-6px'; tip.style.transform = 'translateY(-100%)';
+    };
+    const near = ev => { const r = svg.getBoundingClientRect(); return Math.floor(((ev.clientX - r.left) / r.width * W - L) / bw); };
+    hit.addEventListener('pointermove', ev => showI(near(ev)));
+    hit.addEventListener('pointerdown', ev => showI(near(ev)));
+    hit.addEventListener('pointerleave', () => tip.classList.add('hidden'));
+    host.onkeydown = ev => { if (ev.key === 'ArrowLeft') { showI(idx < 0 ? 0 : Math.max(0, idx - 1)); ev.preventDefault(); } else if (ev.key === 'ArrowRight') { showI(idx < 0 ? 0 : Math.min(hours.length - 1, idx + 1)); ev.preventDefault(); } };
+    host.onblur = () => tip.classList.add('hidden');
+  }
+
+  function drawEconYear(host, bt) {
+    host.textContent = '';
+    const names = ['auto', ...Object.keys(bt.series).filter(k => k !== 'auto')];
+    const all = names.flatMap(n => bt.series[n].map(p => p[1]));
+    if (!all.length) return;
+    const W = Math.max(260, host.clientWidth || 320), H = 170, L = 50, R = 10, T = 10, B = 22;
+    const t0 = Math.min(...names.map(n => bt.series[n][0][0])), t1 = Math.max(...names.map(n => bt.series[n][bt.series[n].length - 1][0]));
+    let lo = Math.min(0, ...all), hi = Math.max(0, ...all);
+    const ticks = niceTicks(lo, hi, 4); lo = ticks[0]; hi = ticks[ticks.length - 1];
+    const x = t => L + (t - t0) / Math.max(1, t1 - t0) * (W - L - R), y = v => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
+    const svg = sv('svg', { viewBox: `0 0 ${W} ${H}`, height: H, role: 'img', 'aria-label': host.getAttribute('aria-label') });
+    ticks.forEach(v => {
+      svg.append(sv('line', { x1: L, x2: W - R, y1: y(v), y2: y(v), style: 'stroke:var(--line)', 'stroke-width': v === 0 ? 1.5 : 1 }));
+      const t = sv('text', { x: L - 6, y: y(v) + 4, 'text-anchor': 'end', style: 'fill:var(--muted)', 'font-size': 10.5 }); t.textContent = fmtSigned(v, 0); svg.append(t);
+    });
+    for (let k = 0; k <= 4; k++) {
+      const t = t0 + (t1 - t0) * k / 4, d = new Date(t * 1000);
+      const tx = sv('text', { x: x(t), y: H - 6, 'text-anchor': k === 0 ? 'start' : k === 4 ? 'end' : 'middle', style: 'fill:var(--muted)', 'font-size': 10.5 }); tx.textContent = d.toLocaleDateString([], { month: 'short', year: k === 0 || k === 4 ? '2-digit' : undefined }); svg.append(tx);
+    }
+    names.slice().reverse().forEach(n => {
+      const pts = bt.series[n]; if (!pts.length) return;
+      const color = n === 'auto' ? 'var(--text)' : modeColor(n);
+      svg.append(sv('path', { d: pts.map((p, i) => (i ? 'L' : 'M') + x(p[0]).toFixed(1) + ' ' + y(p[1]).toFixed(1)).join(' '), fill: 'none', style: 'stroke:' + color, 'stroke-width': n === 'auto' ? 2.25 : 1.5, 'stroke-dasharray': n === 'auto' ? '5 3' : 'none', 'stroke-linejoin': 'round' }));
+    });
+    host.append(svg);
+    const lg = $('econYearLegend'); lg.textContent = '';
+    names.forEach(n => lg.append(el('span', {}, el('i', { class: 'ln', style: 'background:' + (n === 'auto' ? 'var(--text)' : modeColor(n)) }), n === 'auto' ? 'Autopilot' : modeName(n))));
+  }
+
+  // ---------------------------------------------------------------- mining economics (Settings)
+  const TOU_DAYS = { every: [1, 2, 3, 4, 5, 6, 7], weekdays: [1, 2, 3, 4, 5], weekends: [6, 7] };
+  function touRow(p) {
+    const key = Object.keys(TOU_DAYS).find(k => JSON.stringify(TOU_DAYS[k]) === JSON.stringify(p.days)) || 'every';
+    const sel = el('select', { class: 'input', 'aria-label': 'Days' }, el('option', { value: 'every' }, 'Every day'), el('option', { value: 'weekdays' }, 'Weekdays'), el('option', { value: 'weekends' }, 'Weekends'));
+    sel.value = key;
+    const fr = el('input', { class: 'input', type: 'time', value: p.from || '07:00', 'aria-label': 'From' });
+    const to = el('input', { class: 'input', type: 'time', value: p.to || '21:00', 'aria-label': 'Until' });
+    const rate = el('input', { class: 'input', type: 'number', step: '0.001', min: '0', max: '10', inputmode: 'decimal', value: p.rate != null ? p.rate : '', placeholder: '0.12', 'aria-label': 'Price per kWh' });
+    const row = el('div', { class: 'tou-row' }, sel, fr, to, rate, el('button', { class: 'linkbtn danger-link', type: 'button', 'aria-label': 'Remove this price', onclick: () => row.remove(), html: ICON.trash }));
+    return row;
+  }
+  const AP_MODES = () => III ? ['super_eco', 'eco', 'balanced', 'turbo'] : ['whisper', 'eco', 'balanced', 'turbo'];
+  function heatFields() {
+    const t = $('heatType').value;
+    document.querySelectorAll('.heat-f').forEach(f => {
+      const w = f.dataset.for;
+      f.classList.toggle('hidden', !(t !== 'none' && (w === 'any' || w === t || (w === 'fuel' && ['gas', 'propane', 'oil'].includes(t)))));
+    });
+    $('heatPriceUnit').textContent = t === 'gas' ? 'per therm (your gas bill)' : 'per gallon';
+  }
+  function renderEconSettings() {
+    const e = settings.econ || { enabled: true, tou: [], heat: { type: 'none' }, autopilot: { mode: 'off', modes: [] } };
+    $('econSwitch').setAttribute('aria-checked', String(e.enabled !== false));
+    const rows = $('touRows'); rows.textContent = '';
+    (e.tou || []).forEach(p => rows.append(touRow(p)));
+    const h = e.heat || {};
+    $('heatType').value = h.type || 'none';
+    $('heatCop').value = h.cop || ''; $('heatPrice').value = h.price != null ? h.price : ''; $('heatEff').value = h.eff || '';
+    $('heatBal').value = h.balanceC != null ? Math.round(toUnit(h.balanceC)) : ''; $('heatBalUnit').textContent = '°' + units;
+    $('heatLoc').value = h.location || '';
+    heatFields();
+    const a = e.autopilot || {};
+    setSeg($('apSeg'), 'ap', a.mode || 'off');
+    const box = $('apModes'); box.textContent = '';
+    AP_MODES().forEach(m => box.append(el('label', {}, el('input', { type: 'checkbox', 'data-m': m, checked: !(a.modes || []).length || (a.modes || []).includes(m) }), modeName(m))));
+    $('apStop').setAttribute('aria-checked', String(!!a.allowStop));
+    $('apGain').value = a.minGain != null ? a.minGain : '';
+    $('econFee').value = e.poolFee || ''; $('econExtraW').value = e.extraW || '';
+  }
+  function econPayload() {
+    const tou = [...document.querySelectorAll('#touRows .tou-row')].map(r => {
+      const [sel, fr, to, rate] = r.querySelectorAll('select, input');
+      return { days: TOU_DAYS[sel.value], from: fr.value, to: to.value, rate: rate.value.trim() };
+    });
+    const t = $('heatType').value, bal = parseFloat($('heatBal').value);
+    const modes = [...document.querySelectorAll('#apModes input')].filter(c => c.checked).map(c => c.dataset.m);
+    const pressed = $('apSeg').querySelector('[aria-pressed="true"]');
+    return {
+      enabled: $('econSwitch').getAttribute('aria-checked') === 'true', tou,
+      extraW: $('econExtraW').value.trim() || 0, poolFee: $('econFee').value.trim() || 0,
+      heat: { type: t, cop: $('heatCop').value.trim() || 3, price: $('heatPrice').value.trim() || null, eff: $('heatEff').value.trim() || 0.95,
+              balanceC: isNaN(bal) ? 15.5 : Math.round(fromUnit(bal) * 10) / 10, location: $('heatLoc').value.trim() },
+      autopilot: { mode: pressed ? pressed.dataset.ap : 'off', modes: modes.length === AP_MODES().length ? [] : modes,
+                   allowStop: $('apStop').getAttribute('aria-checked') === 'true', minGain: $('apGain').value.trim() || 0.05 },
+    };
+  }
+  $('addTou').addEventListener('click', () => $('touRows').append(touRow({ days: TOU_DAYS.weekdays, from: '14:00', to: '19:00', rate: null })));
+  $('heatType').addEventListener('change', heatFields);
+  $('econSwitch').addEventListener('click', () => { const on = $('econSwitch').getAttribute('aria-checked') !== 'true'; $('econSwitch').setAttribute('aria-checked', String(on)); });
+  $('apStop').addEventListener('click', () => { const on = $('apStop').getAttribute('aria-checked') !== 'true'; $('apStop').setAttribute('aria-checked', String(on)); });
+  document.querySelectorAll('#apSeg [data-ap]').forEach(b => b.addEventListener('click', async () => {
+    if (b.dataset.ap === 'run' && !(await ask('Let the autopilot run your Apollo?', 'It switches modes by itself (each switch restarts the miner for about a minute), at most once an hour, and only when that saves at least your minimum. Your schedule pauses while it runs. A change you make yourself pauses it for 2 hours.', 'Turn on'))) return;
+    setSeg($('apSeg'), 'ap', b.dataset.ap);
+  }));
+  $('saveEcon').addEventListener('click', async () => {
+    const p = econPayload();
+    if (p.heat.type !== 'none' && !p.heat.location) { toast('Add your ZIP code or town, so Houston knows when it\'s cold enough for the heat to count.', 'err'); return; }
+    if (['gas', 'propane', 'oil'].includes(p.heat.type) && !p.heat.price) { toast('Add your fuel price.', 'err'); return; }
+    if (await saveSettings({ econ: p }, 'Mining economics saved.')) { econ = null; setTimeout(loadEcon, 2500); }
+  });
+
   // ---------------------------------------------------------------- your other Apollos
   async function loadFleet() {
     if (!settings || !(settings.apollos || []).length) { $('fleetCard').classList.add('hidden'); return; }
@@ -1514,7 +1789,7 @@
       drawTiles(); drawCharts(); drawEnergy(); drawSystem();
     } catch (e) { if (!handleAuthError(e) && !quiet) toast(e.message, 'err'); }
     document.querySelectorAll('#view-stats .chart').forEach(c => c.style.opacity = 1);
-    loadNodeStats(); loadPriceChart(); loadMarket();
+    loadNodeStats(); loadPriceChart(); loadMarket(); loadEcon();
   }
 
   async function loadPriceChart() {

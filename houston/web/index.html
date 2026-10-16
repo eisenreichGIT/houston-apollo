@@ -418,6 +418,44 @@
   details.table table { width: 100%; border-collapse: collapse; margin-top: 6px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
   details.table th, details.table td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--line); }
   details.table th:first-child, details.table td:first-child { text-align: left; }
+  /* ---------- mining economics ---------- */
+  .verdict { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .verdict b { font-size: 44px; font-weight: 700; font-stretch: 72%; line-height: 1; font-variant-numeric: tabular-nums; }
+  .verdict b.pos { color: var(--ok-text); } .verdict b.neg { color: var(--danger-text); }
+  .verdict span { color: var(--muted); font: 13px var(--mono); }
+  .econ-say { margin: 10px 0 0; font-size: 15px; color: var(--muted); }
+  .econ-say b { color: var(--text); font-weight: 600; }
+  .econ-split { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+  .econ-split div { border-top: 1px solid var(--line); padding-top: 8px; min-width: 0; }
+  .econ-split b { display: block; font: 500 16px var(--mono); font-variant-numeric: tabular-nums; }
+  .econ-split span { color: var(--muted); font: 11.5px var(--mono); }
+  .econ-modes { list-style: none; margin: 0; padding: 0; }
+  .econ-modes li { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 5px 0; }
+  .econ-modes .lbl { font-size: 13.5px; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .econ-modes .lbl i { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .econ-modes .trk { position: relative; height: 14px; }
+  .econ-modes .trk::before { content: ""; position: absolute; left: 50%; top: -3px; bottom: -3px; width: 1px; background: var(--line); }
+  .econ-modes .bar { position: absolute; top: 1px; height: 12px; border-radius: 3px; margin-top: 0; overflow: visible; }
+  .econ-modes .val { font: 12.5px var(--mono); font-variant-numeric: tabular-nums; text-align: right; min-width: 64px; }
+  .econ-modes li.now .lbl { font-weight: 650; }
+  .econ-modes li.best .val::after { content: " ★"; color: var(--muted); }
+  .econ-table { width: 100%; border-collapse: collapse; font: 12.5px var(--mono); font-variant-numeric: tabular-nums; margin-top: 10px; }
+  .econ-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 5px 6px 5px 0; border-bottom: 1px solid var(--line); }
+  .econ-table td { padding: 6px 6px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .econ-table td:not(:first-child), .econ-table th:not(:first-child) { text-align: right; }
+  .econ-table .pos { color: var(--ok-text); } .econ-table .neg { color: var(--danger-text); }
+  .econ-how ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13.5px; }
+  .econ-how li { margin: 4px 0; }
+  h3.sub-h { font: 500 11.5px var(--mono); letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin: 18px 0 6px; }
+  .tou-row { display: grid; grid-template-columns: 1fr auto auto auto 36px; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .tou-row .linkbtn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
+  .tou-row .linkbtn svg { width: 18px; height: 18px; }
+  .tou-row .input { padding: 8px 8px; font-size: 14px; }
+  .tou-row input[type="time"] { width: 124px; padding-right: 4px; }
+  .tou-row input[type="number"] { width: 78px; }
+  .tou-row input[type="time"]::-webkit-calendar-picker-indicator { margin-left: 2px; padding: 0; }
+  @media (max-width: 480px) { .tou-row { grid-template-columns: 1.25fr 1.25fr .8fr 36px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+    .tou-row select { grid-column: 1 / -1; } .tou-row input[type="time"], .tou-row input[type="number"] { width: 100%; min-width: 0; } }
   .bars { list-style: none; margin: 0; padding: 0; }
   .bars li { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 10px; padding: 6px 0; }
   .bars .lbl { font-size: 13.5px; display: flex; align-items: center; gap: 6px; }
@@ -649,6 +687,7 @@
   <section id="view-schedule" class="view hidden" role="tabpanel" aria-label="Schedule">
     <div id="schedLoading" class="empty">Loading schedule…</div>
     <div id="schedBody" class="hidden">
+      <div class="banner hidden" id="apBanner">The autopilot is running your Apollo (Settings › Mining economics), so the schedule is paused.</div>
       <div class="banner hidden" id="authBanner">The Apollo needs your sign-in to run the schedule. Press <b>Save</b> once to fix that.</div>
       <div class="sched-grid">
         <div>
@@ -786,6 +825,42 @@
         </div>
       </div>
     </div>
+    <div id="econSection" class="hidden">
+      <h2 class="section-title">Mining economics</h2>
+      <div class="card note hidden" id="econMissing"></div>
+      <div class="stats-grid" id="econBody">
+        <div>
+          <div class="card" id="econNowCard"><h2>Right now <span class="spacer"></span><span class="sub" id="econNowSub" style="text-transform:none;letter-spacing:0"></span></h2>
+            <div class="verdict"><b id="econNet">–</b><span id="econNetLbl"></span></div>
+            <p class="econ-say" id="econSay"></p>
+            <div class="econ-split" id="econSplit"></div>
+            <h2 style="margin-top:18px">Each mode, per day</h2>
+            <ul class="econ-modes" id="econModes"></ul>
+            <p class="note" id="econBreakeven" style="margin-bottom:0"></p>
+          </div>
+          <div class="card" id="econDayCard"><h2>Next 24 hours <span class="spacer"></span><span class="sub" id="econDayUnit" style="text-transform:none;letter-spacing:0">per hour</span></h2>
+            <div class="chart" id="chEconDay" tabindex="0" aria-label="Best mode and money per hour for the next 24 hours"></div>
+            <div class="legend" id="econDayLegend"></div>
+            <p class="note" id="econAuto" style="margin-bottom:0"></p>
+          </div>
+        </div>
+        <div>
+          <div class="card" id="econYearCard"><h2>The last 12 months <span class="spacer"></span><span class="sub" style="text-transform:none;letter-spacing:0">running total</span></h2>
+            <div class="chart" id="chEconYear" tabindex="0" aria-label="What each way of running would have earned over the last 12 months"></div>
+            <div class="legend" id="econYearLegend"></div>
+            <table class="econ-table" id="econYearTable"></table>
+            <p class="note" id="econYearNote" style="margin-bottom:0"></p>
+          </div>
+          <div class="card" id="econOutlookCard"><h2>Outlook</h2>
+            <div class="kv" id="econOutlook"></div>
+          </div>
+          <div class="card" id="econRealityCard"><h2>Calculators vs. your Apollo</h2>
+            <table class="econ-table" id="econReality"></table>
+          </div>
+        </div>
+      </div>
+      <details class="table econ-how"><summary>How this is worked out</summary><ul id="econHow"></ul></details>
+    </div>
     <div id="marketSection" class="hidden">
       <h2 class="section-title">Bitcoin network &amp; market</h2>
       <div class="stats-grid">
@@ -851,6 +926,36 @@
           </div>
           <div class="btnrow"><button class="primary small" type="button" id="saveRate">Save</button></div>
         </div>
+        <div class="card" id="econCard"><h2>Mining economics</h2>
+          <p class="note" style="margin-top:0">Shows on Stats what your Apollo earns and costs, from its own readings, your electricity price, the network and the bitcoin price.</p>
+          <div class="row-field"><span class="lbl">Show on Stats</span><button class="switch" id="econSwitch" type="button" role="switch" aria-checked="true" aria-label="Show mining economics"></button></div>
+          <h3 class="sub-h">Time-of-use prices</h3>
+          <p class="note" style="margin-top:0">If your electricity costs more or less at certain times. Outside these times, Houston uses your price per kWh above.</p>
+          <div id="touRows"></div>
+          <div class="btnrow" style="margin:-2px 0 6px"><button class="secondary small" type="button" id="addTou">Add a time-of-use price</button></div>
+          <h3 class="sub-h">Heat</h3>
+          <p class="note" style="margin-top:0">Almost every watt the Apollo uses ends up as heat. If it sits in a room you heat, that heat replaces some of your heating while it's cold outside.</p>
+          <div class="row-field"><label for="heatType">Your heating</label>
+            <select class="input" id="heatType" style="width:auto;min-width:170px;font-size:15px;padding:9px 10px">
+              <option value="none">Don't count heat</option><option value="electric">Electric (baseboard, furnace)</option><option value="heatpump">Heat pump</option>
+              <option value="gas">Natural gas</option><option value="propane">Propane</option><option value="oil">Heating oil</option></select></div>
+          <div class="row-field heat-f hidden" data-for="heatpump"><label for="heatCop">Heat pump efficiency (COP)<span class="sub">Heat per unit of electricity; about 2.5–3.5 in winter</span></label><input id="heatCop" class="short" type="number" step="0.1" min="1" max="6" inputmode="decimal" placeholder="3"></div>
+          <div class="row-field heat-f hidden" data-for="fuel"><label for="heatPrice">Fuel price<span class="sub" id="heatPriceUnit">per therm</span></label><input id="heatPrice" class="short" type="number" step="0.01" min="0" max="50" inputmode="decimal" placeholder="1.50"></div>
+          <div class="row-field heat-f hidden" data-for="fuel"><label for="heatEff">Furnace efficiency<span class="sub">0.95 for a modern furnace, 0.8 older</span></label><input id="heatEff" class="short" type="number" step="0.01" min="0.3" max="1" inputmode="decimal" placeholder="0.95"></div>
+          <div class="row-field heat-f hidden" data-for="any"><label for="heatBal">Heating needed below<span class="sub">Outdoor temperature</span></label><input id="heatBal" class="short" type="number" step="1" inputmode="decimal"><span id="heatBalUnit" class="sub">°F</span></div>
+          <div class="row-field heat-f hidden" data-for="any"><label for="heatLoc">Your ZIP code or town<span class="sub">For the outdoor temperature (Open-Meteo)</span></label><input id="heatLoc" type="text" maxlength="80" autocomplete="postal-code" placeholder="16803"></div>
+          <h3 class="sub-h">Autopilot</h3>
+          <p class="note" style="margin-top:0">Picks the mode that earns the most (or loses the least) hour by hour, from your prices, the outdoor temperature and the network. <b style="color:var(--text)">Suggest</b> sends you a note when another mode would be better; <b style="color:var(--text)">Run</b> switches modes itself and pauses the schedule.</p>
+          <div class="seg" role="group" aria-label="Autopilot" id="apSeg"><button type="button" data-ap="off" aria-pressed="true">Off</button><button type="button" data-ap="suggest" aria-pressed="false">Suggest</button><button type="button" data-ap="run" aria-pressed="false">Run</button></div>
+          <div class="checks" id="apModes" style="margin-top:12px"></div>
+          <div class="row-field"><span class="lbl">May stop the miner<span class="sub">When every mode loses money. Off keeps it mining (and solo hunting) in the cheapest mode.</span></span><button class="switch" id="apStop" type="button" role="switch" aria-checked="false" aria-label="Autopilot may stop the miner"></button></div>
+          <div class="row-field"><label for="apGain">Switch only if it saves at least<span class="sub">Per day; avoids restarting the miner for pennies</span></label><input id="apGain" class="short" type="number" step="0.01" min="0" max="10" inputmode="decimal" placeholder="0.05"></div>
+          <details class="table"><summary>More: pool fee, unmeasured watts</summary>
+            <div class="row-field" style="margin-top:8px"><label for="econFee">Pool fee<span class="sub">Percent; 0 for solo mining</span></label><input id="econFee" class="short" type="number" step="0.1" min="0" max="10" inputmode="decimal" placeholder="0"></div>
+            <div class="row-field"><label for="econExtraW">Watts the miner doesn't report<span class="sub">Its computer and drive; a plug meter shows the true total</span></label><input id="econExtraW" class="short" type="number" step="1" min="0" max="200" inputmode="numeric" placeholder="0"></div>
+          </details>
+          <div class="btnrow" style="margin-top:12px"><button class="primary small" type="button" id="saveEcon">Save</button></div>
+        </div>
         <div class="card"><h2>Alerts on your phone</h2>
           <p class="note" style="margin-top:0">Houston tells you when your Apollo stops unexpectedly, runs hot, loses hashrate, its node stops or its drive fills up, when your solo pool finds a block, and when new Apollo software is out. Use either way below, or both.</p>
           <div class="row-field"><span class="lbl">Send alerts</span><button class="switch" id="alertsSwitch" type="button" role="switch" aria-checked="false" aria-label="Alerts on or off"></button></div>
@@ -878,6 +983,7 @@
             <label><input type="checkbox" data-a="disk">Node drive almost full</label>
             <label><input type="checkbox" data-a="block">Solo block found</label>
             <label><input type="checkbox" data-a="update">Apollo software update</label>
+            <label><input type="checkbox" data-a="econ">Mining economics</label>
           </div>
           <div class="row-field"><label for="hotLimit">Hot above<span class="sub">Hashboard temperature</span></label>
             <input id="hotLimit" class="short" type="number" step="1"><span id="hotUnit" class="sub">°F</span></div>
@@ -885,6 +991,10 @@
         </div>
       </div>
       <div>
+        <div class="card hidden" id="appCard"><h2>Houston app</h2>
+          <p class="note" style="margin-top:0" id="appNote">You're using the Houston app.</p>
+          <div class="btnrow"><button class="primary small" type="button" id="appSettings">App settings</button></div>
+        </div>
         <div class="card" id="apolloCard"><h2>This Apollo</h2>
           <div class="row-field"><span class="lbl">FutureBit Apollo software<span class="sub" id="updSub">Checking…</span></span>
             <button class="primary small hidden" type="button" id="updBtn">Update</button>

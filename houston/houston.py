@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2.4.0"
+VERSION = "2.6.0"
 HERE = os.path.dirname(os.path.realpath(__file__))
 WEB_DIR = os.path.realpath(os.environ.get("HOUSTON_WEB", os.path.join(HERE, "web")))
 STATE_DIR = os.environ.get("STATE_DIRECTORY") or os.environ.get("HOUSTON_STATE") or os.path.join(HERE, "state")
@@ -480,6 +480,8 @@ def tick(now):
         fired = read_json(FIRED_FILE, {})
     if not sched.get("enabled"):
         return
+    if get_settings()["econ"]["autopilot"].get("mode") == "run":
+        return                                   # the economics autopilot is running the Apollo
     due = []
     for d, hhmm, action in events(sched):
         h, m = map(int, hhmm.split(":"))
@@ -529,11 +531,12 @@ def default_settings():
         "currency": "$",
         "alerts": {"enabled": False, "server": "https://ntfy.sh", "topic": "",
                    "offline": True, "hot": True, "hotC": 80, "hashrate": True, "node": True, "disk": True, "block": True,
-                   "update": True},
+                   "update": True, "econ": True},
         "apollos": [],                # other Apollos: [{"name": "Garage", "host": "192.168.1.51"}]
         "automation": {"key": None},  # key for Siri Shortcuts / HTTP Shortcuts (see /api/v1/...)
         "price": {"enabled": True, "fiat": "USD"},   # bitcoin price ticker
         "market": {"enabled": True},                 # network, market and news cards on Stats
+        "econ": econ_defaults(),                     # mining economics, time-of-use prices, heat, autopilot
     }
 
 
@@ -541,7 +544,13 @@ def get_settings():
     s = default_settings()
     saved = read_json(SETTINGS_FILE, {})
     for k, v in saved.items():
-        if k in ("alerts", "automation", "price", "market") and isinstance(v, dict):
+        if k == "econ" and isinstance(v, dict):
+            for kk, vv in v.items():
+                if kk in ("heat", "autopilot") and isinstance(vv, dict):
+                    s["econ"][kk].update(vv)
+                elif kk in s["econ"]:
+                    s["econ"][kk] = vv
+        elif k in ("alerts", "automation", "price", "market") and isinstance(v, dict):
             s[k].update(v)
         elif k in s:
             s[k] = v
@@ -576,7 +585,7 @@ def validate_settings(new, current):
         a = new["alerts"]
         if not isinstance(a, dict):
             raise ValueError("alerts must be an object")
-        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block", "update"):
+        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block", "update", "econ"):
             if k in a:
                 s["alerts"][k] = bool(a[k])
         if "server" in a:
@@ -615,6 +624,8 @@ def validate_settings(new, current):
             raise ValueError("market must be an object")
         if "enabled" in mk:
             s["market"]["enabled"] = bool(mk["enabled"])
+    if "econ" in new:
+        validate_econ(new["econ"], s["econ"])
     if "apollos" in new:
         lst = new["apollos"]
         if not isinstance(lst, list) or len(lst) > 20:
@@ -631,6 +642,83 @@ def validate_settings(new, current):
             out.append({"name": name, "host": host})
         s["apollos"] = out
     return s
+
+
+def _num(v, name, lo, hi, allow_none=False):
+    if v in (None, "") and allow_none:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        raise ValueError("%s must be a number" % name)
+    if not lo <= f <= hi:
+        raise ValueError("%s must be between %s and %s" % (name, lo, hi))
+    return f
+
+
+def validate_econ(e, cur):
+    """Mining economics settings: time-of-use periods, extra watts, pool fee, heating, autopilot."""
+    if not isinstance(e, dict):
+        raise ValueError("economics settings must be an object")
+    if "enabled" in e:
+        cur["enabled"] = bool(e["enabled"])
+    if "tou" in e:
+        lst = e["tou"]
+        if not isinstance(lst, list) or len(lst) > 12:
+            raise ValueError("up to 12 time-of-use periods")
+        out = []
+        for p in lst:
+            if not isinstance(p, dict):
+                raise ValueError("each time-of-use period needs days, times and a price")
+            days = sorted({int(d) for d in (p.get("days") or []) if str(d).isdigit() and 1 <= int(d) <= 7})
+            if not days:
+                raise ValueError("pick at least one day for each time-of-use period")
+            fr, to = str(p.get("from", "")), str(p.get("to", ""))
+            if not (TIME_RE.match(fr) and TIME_RE.match(to)) or fr == to:
+                raise ValueError("time-of-use times must be like 07:00 and 21:00 (and different)")
+            out.append({"days": days, "from": fr, "to": to, "rate": round(_num(p.get("rate"), "time-of-use price", 0, 10), 4)})
+        cur["tou"] = out
+    if "extraW" in e:
+        cur["extraW"] = round(_num(e["extraW"], "extra watts", 0, 200))
+    if "poolFee" in e:
+        cur["poolFee"] = round(_num(e["poolFee"], "pool fee", 0, 10), 2)
+    if "heat" in e:
+        h = e["heat"]
+        if not isinstance(h, dict):
+            raise ValueError("heat settings must be an object")
+        if "type" in h:
+            if h["type"] not in HEAT_TYPES:
+                raise ValueError("heating must be one of " + ", ".join(HEAT_TYPES))
+            cur["heat"]["type"] = h["type"]
+        if "cop" in h:
+            cur["heat"]["cop"] = round(_num(h["cop"], "heat pump efficiency (COP)", 1, 6), 2)
+        if "price" in h:
+            p = _num(h["price"], "fuel price", 0, 50, allow_none=True)
+            cur["heat"]["price"] = None if p is None else round(p, 3)
+        if "eff" in h:
+            cur["heat"]["eff"] = round(_num(h["eff"], "furnace efficiency", 0.3, 1.0), 2)
+        if "balanceC" in h:
+            cur["heat"]["balanceC"] = round(_num(h["balanceC"], "heating temperature", -10, 30), 1)
+        if "location" in h:
+            loc = str(h["location"] or "").strip()[:80]
+            if loc and not re.match(r"^[\w .,'-]+$", loc, re.U):
+                raise ValueError("location: a ZIP code, town, or latitude,longitude")
+            cur["heat"]["location"] = loc
+    if "autopilot" in e:
+        a = e["autopilot"]
+        if not isinstance(a, dict):
+            raise ValueError("autopilot settings must be an object")
+        if "mode" in a:
+            if a["mode"] not in AUTOPILOT_MODES:
+                raise ValueError("autopilot must be off, suggest or run")
+            cur["autopilot"]["mode"] = a["mode"]
+        if "modes" in a:
+            ms = [m for m in (a["modes"] or []) if m in MODES]
+            cur["autopilot"]["modes"] = ms
+        if "allowStop" in a:
+            cur["autopilot"]["allowStop"] = bool(a["allowStop"])
+        if "minGain" in a:
+            cur["autopilot"]["minGain"] = round(_num(a["minGain"], "smallest gain worth switching for", 0, 10), 3)
 
 
 def public_settings(s):
@@ -1195,7 +1283,7 @@ def glance_local():
     with LOCK:
         x = dict(_last)
     return {"name": os.uname().nodename, "chassis": chassis(), "status": x.get("s"), "ghs": x.get("h"), "watts": x.get("w"),
-            "tempC": x.get("tb"), "node": x.get("n"), "time": x.get("t"), "houston": VERSION}
+            "tempC": x.get("tb"), "node": x.get("n"), "time": x.get("t"), "houston": VERSION, "mode": x.get("m")}
 
 
 def glance_remote(host):
@@ -1638,6 +1726,565 @@ def market_view():
 # --------------------------------------------------------------------------- automation API (Siri Shortcuts etc.)
 _auto_fail = []
 
+# --------------------------------------------------------------------------- mining economics
+# What running the Apollo actually earns and costs, from Houston's own measurements (hashrate and watts per
+# mode), your electricity price (flat or time-of-use), the network's real difficulty and fees, the bitcoin
+# price, and (optionally) the value of the heat it puts into your home. Public data only, fetched by Houston:
+# mempool.space (difficulty, fees) and Open-Meteo (outdoor temperature, if you give a location).
+METEO = os.environ.get("HOUSTON_METEO", "https://api.open-meteo.com").rstrip("/")
+METEO_GEO = os.environ.get("HOUSTON_METEO_GEO", "https://geocoding-api.open-meteo.com").rstrip("/")
+METEO_ARCHIVE = os.environ.get("HOUSTON_METEO_ARCHIVE", "https://archive-api.open-meteo.com").rstrip("/")
+ECON_EVERY = float(os.environ.get("HOUSTON_ECON_EVERY", "1800"))      # network data refresh (seconds)
+ECON_FILE = os.path.join(STATE_DIR, "econ.json")
+HEAT_TYPES = ("none", "electric", "heatpump", "gas", "propane", "oil")
+HEAT_KWH = {"gas": 29.3071, "propane": 26.8, "oil": 40.6}           # kWh of heat in a therm / gallon
+HEAT_UNIT = {"gas": "therm", "propane": "gallon", "oil": "gallon"}
+AUTOPILOT_MODES = ("off", "suggest", "run")
+AUTOPILOT_EVERY = float(os.environ.get("HOUSTON_AUTOPILOT_EVERY", "300"))   # how often the autopilot looks (seconds)
+# Starting estimates until Houston has measured a mode itself (TH/s, watts). Apollo II figures are measured
+# on a real unit; Apollo III figures are rough and get replaced by your own readings.
+MODE_DEFAULTS = {
+    "ii": {"whisper": (2.93, 107), "eco": (5.6, 209), "balanced": (6.6, 260), "turbo": (7.6, 330)},
+    "iii": {"super_eco": (4.2, 140), "eco": (5.75, 209), "balanced": (6.6, 260), "turbo": (7.6, 330)},
+}
+_econ = {"errors": {}}
+_econ_lock = threading.Lock()
+
+
+def econ_defaults():
+    return {"enabled": True, "tou": [], "extraW": 0, "poolFee": 0.0,
+            "heat": {"type": "none", "cop": 3.0, "price": None, "eff": 0.95, "balanceC": 15.5, "location": ""},
+            "autopilot": {"mode": "off", "modes": [], "allowStop": False, "minGain": 0.05}}
+
+
+def subsidy_btc(height):
+    return 50.0 / (2 ** (int(height) // 210000))
+
+
+def btc_per_th_day(difficulty, height, fee_btc):
+    """Expected BTC a day for 1 TH/s: (hashes a day / hashes per block) x (block subsidy + average fees)."""
+    return 1e12 * 86400 / (float(difficulty) * 2 ** 32) * (subsidy_btc(height) + float(fee_btc))
+
+
+def _in_window(minute, start, end):
+    return start <= minute < end if start < end else (minute >= start or minute < end)
+
+
+def rate_at(ts, s):
+    """Electricity price at time `ts` (local time): the first matching time-of-use period, else the flat rate."""
+    lt = time.localtime(ts)
+    minute = lt.tm_hour * 60 + lt.tm_min
+    for p in s["econ"].get("tou") or []:
+        start, end = (int(p["from"][:2]) * 60 + int(p["from"][3:]), int(p["to"][:2]) * 60 + int(p["to"][3:]))
+        day = lt.tm_wday + 1
+        if start >= end and minute < end:          # overnight period: the early hours belong to the previous day
+            day = 7 if day == 1 else day - 1
+        if day in p["days"] and _in_window(minute, start, end):
+            return float(p["rate"])
+    return s.get("rate")
+
+
+def heat_value(ts, temp_c, s, rate=None):
+    """What a kWh of the Apollo's heat is worth at `ts`: what your heating would have paid for that heat, when
+    it's cold enough to need heating (outdoor temperature below your balance point). 0 otherwise."""
+    h = s["econ"]["heat"]
+    kind = h.get("type", "none")
+    if kind == "none" or temp_c is None or temp_c >= float(h.get("balanceC", 15.5)):
+        return 0.0
+    if rate is None:
+        rate = rate_at(ts, s)
+    if kind == "electric":
+        return float(rate or 0)                                   # resistive heat: 1 kWh in, 1 kWh of heat
+    if kind == "heatpump":
+        return float(rate or 0) / max(1.0, float(h.get("cop") or 3))
+    price = h.get("price")
+    if price is None:
+        return 0.0
+    return float(price) / HEAT_KWH[kind] / max(0.3, float(h.get("eff") or 0.9))
+
+
+def mode_stats(iii=None):
+    """Average TH/s and watts per mode from Houston's readings (last 7 days, while mining). Modes Houston hasn't
+    measured for at least 30 minutes use the starting estimates, marked measured=False."""
+    if iii is None:
+        iii = chassis() == "apollo-iii"
+    defaults = MODE_DEFAULTS["iii" if iii else "ii"]
+    with LOCK:
+        hist = list(_history)
+    acc = {}
+    for x in hist:
+        m, h, w = x.get("m"), x.get("h"), x.get("w")
+        if x.get("s") == "online" and m and h and w and h > 100:
+            a = acc.setdefault(m, [0, 0.0, 0.0])
+            a[0] += 1; a[1] += h / 1000; a[2] += w
+    out = {}
+    for m, (ths, w) in defaults.items():
+        a = acc.get(m)
+        if a and a[0] >= 30:
+            out[m] = {"ths": round(a[1] / a[0], 3), "watts": round(a[2] / a[0], 1), "measured": True, "hours": round(a[0] * SAMPLE_EVERY / 3600, 1)}
+        else:
+            out[m] = {"ths": ths, "watts": w, "measured": False, "hours": round((a[0] if a else 0) * SAMPLE_EVERY / 3600, 1)}
+    up = [1 if x.get("s") == "online" else 0 for x in hist if x.get("s")]
+    return out, (sum(up) / len(up) if up else None)
+
+
+def mode_hour(ms, btcday, price, rate, hv, s):
+    """Money per hour for one mode: revenue, electricity, heat credit, net."""
+    kw = (ms["watts"] + float(s["econ"].get("extraW") or 0)) / 1000
+    rev = ms["ths"] * btcday / 24 * price * (1 - float(s["econ"].get("poolFee") or 0) / 100)
+    cost = kw * float(rate or 0)
+    heat = kw * hv
+    return {"revenue": rev, "cost": cost, "heat": heat, "net": rev - cost + heat, "kw": kw}
+
+
+def breakeven_rate(ms, btcday, price, hv_kind, s, hv_fixed):
+    """The electricity price at which this mode exactly pays for itself (with the heat credit, if it's heating)."""
+    kw = (ms["watts"] + float(s["econ"].get("extraW") or 0)) / 1000
+    rev = ms["ths"] * btcday / 24 * price * (1 - float(s["econ"].get("poolFee") or 0) / 100)
+    if hv_kind == "electric":
+        return None                                             # heat offsets every cent: pays at any price
+    if hv_kind == "heatpump":
+        cop = max(1.0, float(s["econ"]["heat"].get("cop") or 3))
+        return rev / (kw * (1 - 1 / cop)) if cop > 1 else None
+    return (rev + kw * hv_fixed) / kw
+
+
+def difficulty_growth(points, days=180):
+    """Monthly difficulty growth from a least-squares fit of log(difficulty) over the last `days` days."""
+    import math
+    now = time.time()
+    pts = [(t, d) for t, d in points if t >= now - days * 86400 and d > 0]
+    if len(pts) < 3:
+        return None
+    xs = [t / 86400 for t, _ in pts]
+    ys = [math.log(d) for _, d in pts]
+    n = len(xs); mx = sum(xs) / n; my = sum(ys) / n
+    den = sum((x - mx) ** 2 for x in xs)
+    if den == 0:
+        return None
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / den
+    return math.exp(slope * 30.44) - 1
+
+
+# ---- data
+def fetch_econ_network():
+    hr = http_json(MEMPOOL + "/api/v1/mining/hashrate/1y", timeout=20)
+    rs = http_json(MEMPOOL + "/api/v1/mining/reward-stats/144")
+    da = http_json(MEMPOOL + "/api/v1/difficulty-adjustment")
+    diffs = []
+    for p in hr.get("difficulty") or []:
+        t, d = p.get("time") or p.get("timestamp"), p.get("difficulty")
+        if t and d:
+            diffs.append([int(t), float(d)])
+    diffs.sort()
+    blocks = max(1, int(rs.get("endBlock", 0)) - int(rs.get("startBlock", 0)) + 1)
+    return {"difficulty": float(hr.get("currentDifficulty") or diffs[-1][1]), "hashrate": float(hr.get("currentHashrate") or 0),
+            "height": int(rs.get("endBlock") or 0), "feeBtc": float(rs.get("totalFee") or 0) / blocks / 1e8,
+            "rewardBtc": float(rs.get("totalReward") or 0) / blocks / 1e8, "history": diffs,
+            "nextChange": da.get("difficultyChange"), "retargetTime": int(da["estimatedRetargetDate"] / 1000) if da.get("estimatedRetargetDate") else None,
+            "at": int(time.time())}
+
+
+def geocode(location):
+    from urllib.parse import quote
+    loc = (location or "").strip()
+    m = re.match(r"^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$", loc)
+    if m:
+        return {"lat": float(m.group(1)), "lon": float(m.group(3)), "name": loc}
+    j = http_json("%s/v1/search?name=%s&count=1&language=en&format=json" % (METEO_GEO, quote(loc)))
+    r = (j.get("results") or [None])[0]
+    if not r:
+        raise RuntimeError("couldn't find '%s'" % loc)
+    name = ", ".join(x for x in (r.get("name"), r.get("admin1"), r.get("country_code")) if x)
+    return {"lat": float(r["latitude"]), "lon": float(r["longitude"]), "name": name}
+
+
+def fetch_forecast(geo):
+    j = http_json("%s/v1/forecast?latitude=%.2f&longitude=%.2f&hourly=temperature_2m&past_days=1&forecast_days=2"
+                  "&timezone=UTC&timeformat=unixtime" % (METEO, geo["lat"], geo["lon"]))
+    h = j.get("hourly") or {}
+    return [[int(t), v] for t, v in zip(h.get("time") or [], h.get("temperature_2m") or []) if v is not None]
+
+
+def fetch_archive(geo):
+    end = dt.date.today() - dt.timedelta(days=6)
+    start = end - dt.timedelta(days=372)
+    j = http_json("%s/v1/archive?latitude=%.2f&longitude=%.2f&start_date=%s&end_date=%s&daily=temperature_2m_mean"
+                  "&timezone=UTC&timeformat=unixtime" % (METEO_ARCHIVE, geo["lat"], geo["lon"], start, end), timeout=25)
+    d = j.get("daily") or {}
+    return [[int(t), v] for t, v in zip(d.get("time") or [], d.get("temperature_2m_mean") or []) if v is not None]
+
+
+def refresh_econ(force=False):
+    s = get_settings()
+    if not s["econ"].get("enabled"):
+        return
+    now = time.time()
+    with _econ_lock:
+        state = _econ
+        net = state.get("network")
+        if force or not net or now - net.get("at", 0) >= ECON_EVERY:
+            try:
+                state["network"] = fetch_econ_network()
+                state["errors"].pop("network", None)
+            except Exception as e:
+                state["errors"]["network"] = str(e)[:200]
+                log("economics: network data not updated: %s" % e)
+        loc = (s["econ"]["heat"].get("location") or "").strip()
+        if loc and s["econ"]["heat"].get("type") != "none":
+            saved = read_json(ECON_FILE, {})
+            geo = saved.get("geo")
+            try:
+                if not geo or geo.get("query") != loc:
+                    geo = geocode(loc)
+                    geo["query"] = loc
+                    saved = {"geo": geo}                         # new place: old weather doesn't apply
+                    write_json(ECON_FILE, saved, private=True)
+                    state.pop("forecast", None); state.pop("archive", None); state.pop("backtest", None)
+                state["geo"] = geo
+                fc = state.get("forecast")
+                if force or not fc or now - fc["at"] >= 3600:
+                    state["forecast"] = {"at": int(now), "hours": fetch_forecast(geo)}
+                ar = state.get("archive") or saved.get("archive")
+                if not ar or now - ar.get("at", 0) >= 86400 * 3:
+                    ar = {"at": int(now), "days": fetch_archive(geo)}
+                    saved["archive"] = ar
+                    write_json(ECON_FILE, saved, private=True)
+                    state.pop("backtest", None)
+                state["archive"] = ar
+                state["errors"].pop("weather", None)
+            except Exception as e:
+                state["errors"]["weather"] = str(e)[:200]
+                log("economics: weather not updated: %s" % e)
+        else:
+            for k in ("geo", "forecast", "archive"):
+                state.pop(k, None)
+
+
+def temp_at(ts):
+    fc = (_econ.get("forecast") or {}).get("hours") or []
+    if not fc:
+        return None
+    t, v = min(fc, key=lambda r: abs(r[0] - ts))
+    return v if abs(t - ts) <= 3 * 3600 else None
+
+
+def econ_inputs():
+    """Everything the model needs right now, or (None, reason)."""
+    s = get_settings()
+    if not s["econ"].get("enabled"):
+        return None, "off"
+    if s.get("rate") is None and not s["econ"].get("tou"):
+        return None, "rate"
+    net = _econ.get("network")
+    with LOCK:
+        p = dict(_price)
+    if not net or not p.get("price"):
+        return None, "waiting"
+    if p.get("fiat") and s["price"].get("fiat") and p["fiat"] != s["price"]["fiat"]:
+        return None, "waiting"
+    btcday = btc_per_th_day(net["difficulty"], net["height"], net["feeBtc"])
+    return {"s": s, "net": net, "price": float(p["price"]), "fiat": p.get("fiat", "USD"), "btcday": btcday}, None
+
+
+def allowed_modes(s, stats):
+    ap = s["econ"]["autopilot"].get("modes") or []
+    ms = [m for m in stats if (not ap or m in ap)]
+    return ms or list(stats)
+
+
+def best_choice(stats, inp, ts, temp_c, current=None):
+    """The mode that earns the most (or loses the least) at time `ts`; 'stop' when stopping is allowed and every mode loses."""
+    s = inp["s"]
+    rate = rate_at(ts, s)
+    hv = heat_value(ts, temp_c, s, rate)
+    nets = {m: mode_hour(stats[m], inp["btcday"], inp["price"], rate, hv, s)["net"] for m in allowed_modes(s, stats)}
+    if s["econ"]["autopilot"].get("allowStop"):
+        nets["stop"] = 0.0
+    best = max(nets, key=lambda k: nets[k])
+    return best, nets, rate, hv
+
+
+def backtest(stats, inp, temps_by_day, days=365):
+    """What each way of running would have earned over the last year: the real difficulty and daily bitcoin
+    price for every day, your electricity prices hour by hour, heat credit from that day's outdoor temperature,
+    and today's measured hashrate and watts per mode. Fees: the recent average (they aren't in the daily data)."""
+    s = inp["s"]
+    net = inp["net"]
+    diffs = net.get("history") or []
+    try:
+        rows, _ = fetch_history(inp["fiat"], "1Y")
+    except Exception:
+        rows = []
+    prices = sorted(rows)
+    if len(diffs) < 2 or len(prices) < 30:
+        return None
+    modes = list(stats)                       # every mode is shown; the autopilot only picks from the allowed ones
+    pick = set(allowed_modes(s, stats))
+    allow_stop = bool(s["econ"]["autopilot"].get("allowStop"))
+    strategies = {m: {"net": 0.0, "revenue": 0.0, "cost": 0.0, "heat": 0.0, "btc": 0.0} for m in modes}
+    strategies["auto"] = {"net": 0.0, "revenue": 0.0, "cost": 0.0, "heat": 0.0, "btc": 0.0, "hours": {}}
+    series = {k: [] for k in strategies}
+    today = dt.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    di = pi = 0
+    for k in range(days, 0, -1):
+        day = today - dt.timedelta(days=k)
+        t0 = day.timestamp()
+        while di + 1 < len(diffs) and diffs[di + 1][0] <= t0:
+            di += 1
+        while pi + 1 < len(prices) and prices[pi + 1][0] <= t0 + 43200:
+            pi += 1
+        diff, price = diffs[di][1], prices[pi][1]
+        if diffs[0][0] > t0 + 86400 or abs(prices[pi][0] - t0) > 4 * 86400:
+            continue
+        btcday = btc_per_th_day(diff, net["height"], net["feeBtc"])
+        temp = temps_by_day.get(day.strftime("%Y-%m-%d"))
+        for h in range(24):
+            ts = t0 + h * 3600
+            rate = rate_at(ts, s)
+            hv = heat_value(ts, temp, s, rate)
+            best, best_net, best_r = None, None, None
+            for m in modes:
+                r = mode_hour(stats[m], btcday, price, rate, hv, s)
+                st = strategies[m]
+                st["net"] += r["net"]; st["revenue"] += r["revenue"]; st["cost"] += r["cost"]; st["heat"] += r["heat"]
+                st["btc"] += stats[m]["ths"] * btcday / 24 * (1 - float(s["econ"].get("poolFee") or 0) / 100)
+                if m in pick and (best_net is None or r["net"] > best_net):
+                    best, best_net, best_r = m, r["net"], r
+            a = strategies["auto"]
+            if allow_stop and best_net < 0:
+                a["hours"]["stop"] = a["hours"].get("stop", 0) + 1
+            else:
+                a["net"] += best_r["net"]; a["revenue"] += best_r["revenue"]; a["cost"] += best_r["cost"]; a["heat"] += best_r["heat"]
+                a["btc"] += stats[best]["ths"] * btcday / 24 * (1 - float(s["econ"].get("poolFee") or 0) / 100)
+                a["hours"][best] = a["hours"].get(best, 0) + 1
+        if k % 7 == 0 or k == 1:
+            for name, st in strategies.items():
+                series[name].append([int(t0 + 86400), round(st["net"], 2)])
+    out = {name: {kk: (round(v, 2) if isinstance(v, float) and kk != "btc" else (round(v, 8) if kk == "btc" else v)) for kk, v in st.items()}
+           for name, st in strategies.items()}
+    return {"strategies": out, "series": series, "days": days, "at": int(time.time()), "heat": bool(temps_by_day)}
+
+
+def econ_view():
+    inp, why = econ_inputs()
+    s = get_settings()
+    base = {"enabled": s["econ"].get("enabled", True), "settings": s["econ"], "errors": dict(_econ.get("errors") or {}),
+            "rate": s.get("rate"), "currency": s.get("currency", "$")}
+    if why:
+        base["missing"] = why
+        return base
+    net, price, btcday = inp["net"], inp["price"], inp["btcday"]
+    iii = chassis() == "apollo-iii"
+    stats, uptime = mode_stats(iii)
+    now = time.time()
+    temp_now = temp_at(now)
+    rate_now = rate_at(now, s)
+    hv_now = heat_value(now, temp_now, s, rate_now)
+    kind = s["econ"]["heat"].get("type", "none")
+    current = _last.get("m") if _last.get("m") in stats else None
+    modes = {}
+    for m, ms in stats.items():
+        r = mode_hour(ms, btcday, price, rate_now, hv_now, s)
+        hv_fixed = heat_value(now, -100, s, rate_now) if kind in HEAT_KWH else 0.0
+        be = breakeven_rate(ms, btcday, price, kind if hv_now > 0 else "none", s, hv_fixed if hv_now > 0 else 0.0)
+        need = (r["cost"] - r["heat"]) / (r["revenue"] / price) if r["revenue"] > 0 and r["cost"] > r["heat"] else 0.0
+        modes[m] = {"ths": ms["ths"], "watts": ms["watts"], "measured": ms["measured"], "hours": ms["hours"],
+                    "revenue": round(r["revenue"] * 24, 4), "cost": round(r["cost"] * 24, 4), "heat": round(r["heat"] * 24, 4),
+                    "net": round(r["net"] * 24, 4), "breakevenRate": round(be, 4) if be is not None else None,
+                    "breakevenPrice": round(need, 0), "sats": round(ms["ths"] * btcday * 1e8 * (1 - float(s["econ"].get("poolFee") or 0) / 100))}
+    # next 24 hours, hour by hour (time-of-use prices and the temperature forecast)
+    start = int(now // 3600 * 3600)
+    hours = []
+    for i in range(24):
+        ts = start + i * 3600
+        t = temp_at(ts)
+        best, nets, rate, hv = best_choice(stats, inp, ts, t)
+        hours.append({"t": ts, "rate": rate, "tempC": t, "best": best, "net": round(nets[best], 4),
+                      "nets": {k: round(v, 4) for k, v in nets.items()}})
+    # outlook: difficulty trend, and the next 12 months at today's price for the mode in use (or Eco)
+    g = difficulty_growth(net.get("history") or [])
+    ref = current or ("eco" if "eco" in stats else next(iter(stats)))
+    rev_day = modes[ref]["revenue"]
+    if g is not None:
+        factor = sum(1 / (1 + g) ** (k + 0.5) for k in range(12)) / 12
+    else:
+        factor = 1.0
+    outlook = {"growthMonth": round(g, 4) if g is not None else None, "nextChange": net.get("nextChange"),
+               "retargetTime": net.get("retargetTime"), "mode": ref,
+               "year": {"calculator": round(rev_day * 365, 2), "houston": round(rev_day * 365 * factor, 2)}}
+    # last 12 months
+    with _econ_lock:
+        bt = _econ.get("backtest")
+        if not bt or now - bt.get("at", 0) > 6 * 3600 or bt.get("key") != json.dumps(s["econ"], sort_keys=True) + str(s.get("rate")):
+            temps = {}
+            for t, v in ((_econ.get("archive") or {}).get("days") or []):
+                temps[dt.datetime.fromtimestamp(t, dt.timezone.utc).strftime("%Y-%m-%d")] = v
+            try:
+                bt = backtest(stats, inp, temps)
+                if bt:
+                    bt["key"] = json.dumps(s["econ"], sort_keys=True) + str(s.get("rate"))
+                    _econ["backtest"] = bt
+            except Exception as e:
+                log("economics: backtest failed: %s" % e)
+                bt = None
+    ap = s["econ"]["autopilot"]
+    best_now, nets_now, _, _ = best_choice(stats, inp, now, temp_now)
+    state = dict(_econ.get("ap") or {})
+    reward = net.get("rewardBtc") or (subsidy_btc(net["height"]) + net["feeBtc"])
+    base.update({
+        "price": price, "fiat": inp["fiat"], "btcPerThDay": btcday, "hashprice": round(btcday * price * 1000, 2),
+        "network": {"difficulty": net["difficulty"], "hashrate": net["hashrate"], "height": net["height"],
+                    "feeBtc": round(net["feeBtc"], 5), "subsidy": subsidy_btc(net["height"]),
+                    "feeShare": round(net["feeBtc"] / reward, 4) if reward else None, "at": net["at"]},
+        "now": {"rate": rate_now, "tempC": temp_now, "heatValue": round(hv_now, 4), "heating": hv_now > 0, "mode": current,
+                "status": _last.get("s")},
+        "modes": modes, "uptime": round(uptime, 4) if uptime is not None else None, "hours": hours, "outlook": outlook,
+        "backtest": {k: v for k, v in (bt or {}).items() if k != "key"} if bt else None,
+        "place": (_econ.get("geo") or {}).get("name"),
+        "autopilot": {"mode": ap.get("mode", "off"), "best": best_now, "nets": {k: round(v * 24, 4) for k, v in nets_now.items()},
+                      "state": state},
+    })
+    return base
+
+
+# ---- autopilot and economics alerts
+def _recent_manual(minutes=120):
+    cutoff = dt.datetime.now().astimezone() - dt.timedelta(minutes=minutes)
+    for it in read_json(ACTIVITY_FILE, [])[:20]:
+        try:
+            t = dt.datetime.fromisoformat(it.get("time"))
+        except (TypeError, ValueError):
+            continue
+        if t < cutoff:
+            break
+        a = it.get("action", "")
+        if it.get("source") in ("app", "shortcut", "schedule") and (a in ("start", "stop") or a in MODES or a.startswith(("custom", "start@"))):
+            return True
+    return False
+
+
+def autopilot_step():
+    inp, why = econ_inputs()
+    if why:
+        return
+    s = inp["s"]
+    ap = s["econ"]["autopilot"]
+    mode = ap.get("mode", "off")
+    state = _econ.setdefault("ap", {})
+    if mode == "off":
+        state.clear()
+        return
+    stats, _ = mode_stats()
+    now = time.time()
+    best, nets, rate, hv = best_choice(stats, inp, now, temp_at(now))
+    status, current = _last.get("s"), _last.get("m")
+    running = status in ("online", "pending")
+    if not running:
+        cur_key, cur_net = "stop", 0.0
+    elif current in stats:
+        cur_key = current
+        cur_net = mode_hour(stats[current], inp["btcday"], inp["price"], rate, hv, s)["net"]
+    else:
+        cur_key, cur_net = None, None          # a mode Houston can't price (e.g. a dashboard custom setting): leave it alone
+    if state.get("best") != best:
+        state.update({"best": best, "since": now})
+    gain_day = (nets[best] - cur_net) * 24 if cur_key else 0
+    state.update({"gainDay": round(gain_day, 4), "checked": int(now)})
+    min_gain = float(ap.get("minGain") or 0.05)
+    if mode == "suggest":
+        lasting = now - state.get("since", now) >= 3600
+        should = cur_key is not None and best != cur_key and gain_day >= min_gain and lasting
+        label_best = "stopping" if best == "stop" else label(best)
+        alert("econ_suggest", should and get_settings()["alerts"].get("econ", True),
+              "Autopilot suggests %s" % label_best,
+              "Right now %s would earn %s more a day than %s (electricity %s/kWh%s)." % (
+                  label_best, money_txt(gain_day, s), "stopped" if cur_key == "stop" else label(cur_key or ""),
+                  money_txt(rate or 0, s, 3), ", heat counted" if hv > 0 else ""), "bulb", "low", repeat_hours=12)
+        return
+    # mode == "run": act, but never fight a change you just made, and don't flip back and forth
+    token = stored_token()
+    if not token or cur_key is None or best == cur_key or status in ("unreachable", None) or updating():
+        return
+    if _recent_manual():
+        state["paused"] = "your change"
+        return
+    state.pop("paused", None)
+    if gain_day < min_gain or now - state.get("appliedAt", 0) < 3600:
+        return
+    action = "stop" if best == "stop" else (("start@" + best) if not running else best)
+    state.update({"applied": best, "appliedAt": now})
+    why_txt = "%s/day better than %s" % (money_txt(gain_day, s), "stopped" if cur_key == "stop" else label(cur_key))
+    try:
+        msg = run_action(action, token)
+        if action.startswith("start@"):
+            msg = "Started mining in %s" % label(best)
+        add_activity(action, True, "%s (%s)" % (msg, why_txt), source="autopilot")
+        log("autopilot: %s -> %s" % (action, msg))
+    except Exception as e:
+        add_activity(action, False, str(e), source="autopilot")
+
+
+def money_txt(v, s, digits=2):
+    cur = s.get("currency") or "$"
+    sign = "-" if v < 0 else ""
+    return "%s%s%.*f" % (sign, cur, digits, abs(v))
+
+
+def econ_alerts():
+    inp, why = econ_inputs()
+    if why:
+        return
+    s = inp["s"]
+    if not s["alerts"].get("econ", True):
+        return
+    net = inp["net"]
+    saved = read_json(ECON_FILE, {})
+    last = saved.get("lastDifficulty")
+    if last and abs(net["difficulty"] - last) / last > 0.001:
+        change = (net["difficulty"] - last) / last * 100
+        stats, _ = mode_stats()
+        m = _last.get("m") if _last.get("m") in stats else ("eco" if "eco" in stats else next(iter(stats)))
+        r = mode_hour(stats[m], inp["btcday"], inp["price"], rate_at(time.time(), s), 0.0, s)
+        title = "Difficulty %s %.1f%%" % ("up" if change > 0 else "down", abs(change))
+        msg = "Your Apollo now earns about %.1f%% %s per day: %s a day in %s." % (abs(change) / (1 + change / 100), "less" if change > 0 else "more",
+                                                                           money_txt(r["revenue"] * 24, s), label(m))
+        if s["alerts"]["enabled"] and alert_channels(s):
+            try:
+                notify(title, msg, "chart_with_upwards_trend" if change > 0 else "chart_with_downwards_trend", "low", s, tag="econ")
+                add_activity("alert", True, title + ": " + msg, source="alert")
+            except Exception as e:
+                log("economics alert not sent: %s" % e)
+    if not last or abs(net["difficulty"] - last) / last > 0.001:
+        saved["lastDifficulty"] = net["difficulty"]
+        write_json(ECON_FILE, saved, private=True)
+    # pays / doesn't pay for itself, for the mode in use
+    stats, _ = mode_stats()
+    m = _last.get("m")
+    if m in stats and _last.get("s") == "online":
+        now = time.time()
+        rate = rate_at(now, s)
+        r = mode_hour(stats[m], inp["btcday"], inp["price"], rate, heat_value(now, temp_at(now), s, rate), s)
+        alert("econ_pays", r["net"] > 0.001, "Your Apollo pays for itself right now",
+              "%s earns %s a day more than its electricity%s costs." % (label(m), money_txt(r["net"] * 24, s), " (minus the heat it saves)" if r["heat"] else ""),
+              "moneybag", "low", repeat_hours=24 * 7)
+
+
+def econ_loop():
+    time.sleep(10)
+    last_ap = 0
+    while True:
+        try:
+            refresh_econ()
+            econ_alerts()
+            if time.time() - last_ap >= AUTOPILOT_EVERY:
+                last_ap = time.time()
+                autopilot_step()
+        except Exception as e:
+            log("economics error: %s" % e)
+        time.sleep(min(60, max(5, AUTOPILOT_EVERY)))
+
+
 # --------------------------------------------------------------------------- Apollo software updates
 # FutureBit's own update: Houston only asks the Apollo's API to run it (Mcu.update) and follows its
 # progress (Mcu.updateProgress), exactly like the Apollo dashboard does. It downloads the new
@@ -1915,6 +2562,27 @@ def automation_action(action):
     return say.get(a, "Switching to %s." % label(a))
 
 
+def alerts_since(since, limit=20):
+    """Alerts Houston sent (and update results) after `since` (epoch seconds), oldest first."""
+    out = []
+    for it in read_json(ACTIVITY_FILE, []):
+        if it.get("source") not in ("alert", "houston"):
+            continue
+        try:
+            t = dt.datetime.fromisoformat(it.get("time")).timestamp()
+        except (TypeError, ValueError):
+            continue
+        if t <= since:
+            continue
+        title = it.get("message") or ""
+        if it.get("action") == "update":
+            title, body = ("Apollo software updated" if it.get("ok") else "Apollo software update didn't finish"), title
+        else:
+            body = ""
+        out.append({"t": int(t), "title": title[:200], "message": body[:400], "ok": bool(it.get("ok")), "kind": it.get("action")})
+    return sorted(out, key=lambda a: a["t"])[-limit:]
+
+
 def status_sentence():
     st = get_settings()
     x = glance_local()
@@ -2117,6 +2785,14 @@ class Handler(BaseHTTPRequestHandler):
             q = self._query()
             _price_seen[0] = time.time()     # someone is looking: refresh every few seconds
             return self._send(200, price_view(q.get("range", "1D"), q.get("points") != "0"))
+        if path == "/api/v1/alerts":         # for the Android app's notifications (shortcut key)
+            if not automation_ok(self._automation_key()):
+                return self._send(401, {"error": "Wrong or missing Houston key."})
+            try:
+                since = float(self._query().get("since") or 0)
+            except ValueError:
+                since = 0
+            return self._send(200, {"now": int(time.time()), "alerts": alerts_since(since)})
         if path in ("/api/v1/status", "/api/v1/say"):
             if not automation_ok(self._automation_key()):
                 return self._send(401, "Wrong or missing Houston key.", "text/plain; charset=utf-8")
@@ -2129,7 +2805,7 @@ class Handler(BaseHTTPRequestHandler):
             g["text"] = status_sentence()
             return self._send(200, g)
         if path not in ("/api/schedule", "/api/activity", "/api/settings", "/api/history", "/api/fleet", "/api/automation",
-                        "/api/push", "/api/apollo-update", "/api/houston-log"):
+                        "/api/push", "/api/apollo-update", "/api/houston-log", "/api/economics"):
             return self._send(404, {"error": "not found"})
         if not self._require_auth():
             return
@@ -2153,6 +2829,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, push_view())
         if path == "/api/apollo-update":
             return self._send(200, update_view(self._token(), self._query().get("check") == "1"))
+        if path == "/api/economics":
+            if self._query().get("refresh") == "1":
+                refresh_econ(True)
+            return self._send(200, econ_view())
         if path == "/api/houston-log":
             return self._send(200, {"content": "\n".join(_LOG_RING), "timestamp": dt.datetime.now().astimezone().isoformat(timespec="seconds")})
         return self._send(404, {"error": "not found"})
@@ -2174,11 +2854,14 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 with LOCK:
                     old_price, old_market = get_settings()["price"], get_settings()["market"]
+                    old_econ_loc = get_settings()["econ"]["heat"].get("location")
                     new = validate_settings(self._json_body(), get_settings())
                     write_json(SETTINGS_FILE, new, private=True)
                     save_token(self._token())
                 if new["price"] != old_price:
                     threading.Thread(target=refresh_price, args=(True,), daemon=True).start()
+                if new["econ"]["heat"].get("location") != old_econ_loc:
+                    threading.Thread(target=refresh_econ, args=(True,), daemon=True).start()
                 if new["market"] != old_market or new["price"].get("fiat") != old_price.get("fiat"):
                     threading.Thread(target=refresh_market, args=(True,), daemon=True).start()
             except (ValueError, UnicodeDecodeError) as e:
@@ -2336,6 +3019,8 @@ def main():
         threading.Thread(target=market_loop, daemon=True).start()
     if UPDATE_EVERY > 0:
         threading.Thread(target=update_loop, daemon=True).start()
+    if ECON_EVERY > 0:
+        threading.Thread(target=econ_loop, daemon=True).start()
 
     def stop(*_):
         save_history()          # keep the charts across restarts

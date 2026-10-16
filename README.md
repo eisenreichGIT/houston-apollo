@@ -6,6 +6,7 @@
 - **Control**: start, stop, Eco / Balanced / Turbo, plus Houston's own **Whisper** mode on the Apollo II (half of Eco's power, the quietest). Apollo III: Super Eco and a custom 5–20 TH/s target. Start/stop the Bitcoin node too
 - **Schedule**: e.g. quiet Eco around the clock, Turbo on weekdays while nobody's home. The Apollo runs it itself, so no computer has to stay on
 - **Stats**: 24-hour and 7-day charts, electricity cost (and what Turbo adds), solo-mining odds and best share, node and system health
+- **Mining economics**: what your Apollo really earns, costs and saves in heat, from its own readings; the break-even price; the last 12 months replayed with real difficulty and prices; time-of-use electricity; and an **autopilot** that runs the mode that pays best (or suggests it)
 - **Bitcoin network & market**: Fear & Greed Index, block height and time since the last block, block time and difficulty, market cap, dominance, volume, sats per dollar, and the latest headlines
 - **Apollo software updates**: see when FutureBit releases a new version and install it from Houston, with progress
 - **System logs**: the Apollo's miner, node, solo pool and system logs, filterable and live
@@ -14,6 +15,7 @@
 - **Siri and shortcuts**: "Hey Siri, Apollo status". Google Home works through Home Assistant
 - **Several Apollos** in one place
 - **Light or dark**, or follow your phone or computer
+- **Android and iPhone apps** (beta, optional): home-screen widgets, an Android quick-settings tile and notifications, Siri on iPhone. See [docs/apps.md](docs/apps.md)
 - **Desktop shortcuts** (optional) for Windows, macOS and Linux: open Houston, or one-click Start / Stop / Status / modes
 
 <img src="docs/images/houston-phone.png" alt="Houston on a phone: Home, Stats and Schedule (demo data)">
@@ -80,6 +82,7 @@ docs/                      guides
 ## Docs
 
 - [Houston: install, the app, alerts, several Apollos, updating](docs/houston.md)
+- [Android and iPhone apps](docs/apps.md): widgets, quick tile, notifications, Siri
 - [Siri, Android shortcuts and Google Home](docs/voice-assistants.md)
 - [Windows](docs/windows.md) · [macOS](docs/macos.md) · [Linux](docs/linux.md) desktop setup
 - [Apollo III: Super Eco and custom hashrate targets](docs/apollo-iii.md)
