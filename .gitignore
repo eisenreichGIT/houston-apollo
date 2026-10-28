@@ -16,3 +16,6 @@ ios/Houston.xcodeproj/
 ios/Houston/Info.plist
 ios/HoustonWidget/Info.plist
 xcuserdata/
+# Local-only helpers (like Update-Houston.local.bat): never committed
+*.local.bat
+*.local.ps1

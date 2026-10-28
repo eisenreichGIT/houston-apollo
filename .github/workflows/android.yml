@@ -19,9 +19,9 @@ jobs:
   build:
     runs-on: ubuntu-24.04        # has the Android SDK preinstalled
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "17"
@@ -33,7 +33,7 @@ jobs:
           "$SDKM" --install "platforms;android-34" "build-tools;34.0.0" >/dev/null
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.10.2"
 
@@ -62,7 +62,7 @@ jobs:
             cp app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/Houston.apk"
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: Houston-android
           path: ${{ runner.temp }}/Houston.apk

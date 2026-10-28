@@ -227,7 +227,7 @@
     if (id === 'stats') { loadStats(); statsTimer = setInterval(() => { if (!document.hidden) loadStats(true); }, 60000); }
     if (id === 'schedule') { loadSchedule(); $('apBanner').classList.toggle('hidden', !(settings && settings.econ && settings.econ.autopilot && settings.econ.autopilot.mode === 'run')); }
     if (id === 'activity') { if (opts && opts.pane) actPane = opts.pane; showPane(); }
-    if (id === 'settings') { renderSettings(); loadHou(false); }
+    if (id === 'settings') { renderSettings(); loadHou(false); loadWallet(); }
   }
 
   // ---------------------------------------------------------------- sign in / out
@@ -561,7 +561,8 @@
 
   // ---------------------------------------------------------------- schedule
   const clone = o => JSON.parse(JSON.stringify(o));
-  const strip = s => s && JSON.stringify({ enabled: s.enabled, base: s.base, tz: s.tz || null, windows: s.windows });
+  const strip = s => s && JSON.stringify({ enabled: s.enabled, base: s.base, tz: s.tz || null, windows: s.windows, weather: (s.weather && s.weather.rules) || [] });
+  let wxView = null;
   const isDirty = () => !!(draft && saved && strip(draft) !== strip(saved));
 
   const modeChoices = () => III ? ['super_eco', 'eco', 'balanced', 'turbo', 'custom'] : ['whisper', 'eco', 'balanced', 'turbo'];
@@ -582,6 +583,8 @@
     saved = j.schedule || { enabled: false, base: 'eco', windows: [] };
     if (!saved.tz && BROWSER_TZ) saved.tz = BROWSER_TZ;      // new schedule: use this device's time zone
     if (!saved.base) saved.base = 'eco';
+    if (!saved.weather || !Array.isArray(saved.weather.rules)) saved.weather = { rules: [] };
+    wxView = j.weather || null;
     draft = clone(saved); upcomingList = j.upcoming || []; nowExpected = j.now || null;
     authorized = j.authorized !== false; schedLoaded = true;
     renderSchedule(); renderNext();
@@ -667,7 +670,7 @@
     for (const m of modeChoices().filter(m => m !== 'custom')) bs.append(el('option', { value: m }, modeName(m)));
     if (draft.base && draft.base.startsWith('custom:')) bs.append(el('option', { value: draft.base }, modeName(draft.base)));
     bs.value = draft.base;
-    $('baseRow').classList.toggle('hidden', !draft.windows.some(w => w.type === 'mode'));
+    $('baseRow').classList.toggle('hidden', !draft.windows.some(w => w.type === 'mode') && !draft.weather.rules.length);
     $('authBanner').classList.toggle('hidden', authorized || !saved.enabled);
 
     const box = $('windows'); box.textContent = '';
@@ -676,8 +679,54 @@
     }
     draft.windows.forEach((w, i) => box.append(windowCard(w, i)));
     $('addBtn').disabled = draft.windows.length >= 20;
-    renderUpcoming(); renderSaveBar();
+    renderWeather(); renderUpcoming(); renderSaveBar();
   }
+
+  // ---------------------------------------------------------------- weather rules (Schedule)
+  function renderWeather() {
+    const rules = draft.weather.rules, box = $('wxRules'); box.textContent = '';
+    const v = wxView || {};
+    rules.forEach((r, i) => {
+      const when = el('select', { class: 'input', 'aria-label': 'Below or above' }, el('option', { value: 'below' }, 'Below'), el('option', { value: 'above' }, 'Above'));
+      when.value = r.when;
+      const t = el('input', { class: 'input', type: 'number', step: '1', inputmode: 'numeric', value: String(Math.round(toUnit(r.tempC))), 'aria-label': 'Outdoor temperature' });
+      const ms = el('select', { class: 'input', 'aria-label': 'Mode' });
+      modeChoices().filter(m => m !== 'custom').forEach(m => ms.append(el('option', { value: m }, modeName(m))));
+      if (r.mode && r.mode.startsWith('custom:')) ms.append(el('option', { value: r.mode }, modeName(r.mode)));
+      ms.value = r.mode;
+      const sync = () => { const n = parseFloat(t.value); r.when = when.value; r.mode = ms.value; if (!isNaN(n)) r.tempC = Math.round(fromUnit(n) * 10) / 10; renderSaveBar(); };
+      [when, t, ms].forEach(x => x.addEventListener('change', sync)); t.addEventListener('input', sync);
+      const row = el('div', { class: 'wx-row' + (v.rule === i && !isDirty() ? ' on' : '') }, when, t, el('span', { class: 'u' }, '°' + units + ' →'), ms,
+        el('button', { class: 'linkbtn danger-link', type: 'button', 'aria-label': 'Remove this rule', html: ICON.trash, onclick: () => { rules.splice(i, 1); renderSchedule(); } }));
+      box.append(row);
+    });
+    $('wxAdd').disabled = rules.length >= 4;
+    $('wxLocRow').classList.toggle('hidden', !!v.location && !!rules.length || !rules.length);
+    $('wxNow').textContent = v.tempC != null ? fmtTemp(v.tempC) + ' now' + (v.place ? ' · ' + v.place.split(',')[0] : '') : '';
+    let note = '';
+    if (rules.length) {
+      if (!v.location) note = 'Add your ZIP code or town so Houston knows the outdoor temperature.';
+      else if (v.error && v.tempC == null) note = 'Couldn\'t get the weather: ' + v.error;
+      else if (settings && settings.econ && settings.econ.autopilot && settings.econ.autopilot.mode === 'run') note = 'Paused while the autopilot runs your Apollo.';
+      else if (isDirty()) note = 'Save to start using these rules.';
+      else if (v.rule != null && rules[v.rule]) note = 'Applying now: ' + rules[v.rule].when + ' ' + fmtTemp(rules[v.rule].tempC) + ' → ' + modeName(rules[v.rule].mode) + '.';
+      else note = 'No rule applies right now, so your windows and normal mode decide.';
+      note += ' Houston uses the hourly forecast and switches at most every 30 minutes.';
+    }
+    $('wxNote').textContent = note;
+  }
+  $('wxAdd').addEventListener('click', () => {
+    const r = draft.weather.rules, has = w => r.some(x => x.when === w);
+    if (!has('below')) r.push({ when: 'below', tempC: units === 'F' ? 4.4 : 5, mode: 'turbo' });
+    else r.push({ when: 'above', tempC: units === 'F' ? 23.9 : 24, mode: III ? 'super_eco' : 'whisper' });
+    if (!draft.enabled) draft.enabled = true;
+    renderSchedule();
+  });
+  $('wxLocSave').addEventListener('click', async () => {
+    const loc = $('wxLoc').value.trim();
+    if (!loc) { toast('Enter a ZIP code or town.', 'err'); return; }
+    if (await saveSettings({ econ: { heat: { location: loc } } }, 'Location saved.')) setTimeout(() => loadSchedule(), 3000);
+  });
 
   function windowCard(w, i) {
     const card = el('div', { class: 'win' });
@@ -786,7 +835,8 @@
 
   async function saveSchedule() {
     const body = { enabled: draft.enabled, base: draft.base, tz: draft.tz || BROWSER_TZ || null,
-      windows: draft.windows.map(w => { const o = { type: w.type, days: w.days, on: w.on, off: w.off || null }; if (w.mode) o.mode = w.mode; return o; }) };
+      windows: draft.windows.map(w => { const o = { type: w.type, days: w.days, on: w.on, off: w.off || null }; if (w.mode) o.mode = w.mode; return o; }),
+      weather: { rules: draft.weather.rules } };
     $('saveBtn').disabled = true; $('saveText').textContent = 'Saving…';
     try {
       const j = await rest('PUT', 'api/schedule', body);
@@ -1140,6 +1190,8 @@
     $('topic').value = a.topic || '';
     document.querySelectorAll('#alertChecks input').forEach(c => { c.checked = a[c.dataset.a] !== false; });
     $('hotLimit').value = a.hotC != null ? Math.round(toUnit(a.hotC)) : '';
+    $('digestSwitch').setAttribute('aria-checked', String(!!a.digest));
+    $('digestTime').value = a.digestTime || '08:00';
     $('hotUnit').textContent = '°' + units;
     $('ntfyServer').value = a.server && a.server !== 'https://ntfy.sh' ? a.server : '';
     renderPeers(settings.apollos || []);
@@ -1185,9 +1237,12 @@
     document.querySelectorAll('#alertChecks input').forEach(c => { a[c.dataset.a] = c.checked; });
     const lim = parseFloat($('hotLimit').value);
     if (!isNaN(lim)) a.hotC = Math.round(fromUnit(lim) * 10) / 10;
+    a.digest = $('digestSwitch').getAttribute('aria-checked') === 'true';
+    if ($('digestTime').value) a.digestTime = $('digestTime').value;
     return a;
   }
   $('saveAlerts').addEventListener('click', () => saveSettings({ alerts: alertsPayload() }, 'Alert settings saved.'));
+  $('digestSwitch').addEventListener('click', () => { const on = $('digestSwitch').getAttribute('aria-checked') !== 'true'; $('digestSwitch').setAttribute('aria-checked', String(on)); });
   $('testAlert').addEventListener('click', async () => {
     if (!(await saveSettings({ alerts: Object.assign(alertsPayload(), { enabled: alertsPayload().enabled }) }, 'Saved. Sending a test…'))) return;
     try { const j = await rest('POST', 'api/alerts/test', {}); toast('Test sent' + (j.warnings && j.warnings.length ? ' (' + j.warnings.join('; ') + ')' : '') + '. Check your phone.', j.warnings && j.warnings.length ? '' : 'ok'); }
@@ -1573,7 +1628,7 @@
     const ap = econ.autopilot, st = ap.state || {};
     $('econAuto').textContent = ap.mode === 'run' ? 'Autopilot is running: it switches to the best mode when that saves at least ' + fmtMoney(econ.settings.autopilot.minGain) + ' a day, at most once an hour' + (st.paused ? ' (paused for 2 hours after your own change)' : '') + '.'
       : ap.mode === 'suggest' ? 'Autopilot suggestions are on: Houston tells you when another mode would be better for an hour or more.'
-      : 'Bars show the best mode for each hour. The autopilot (Settings › Mining economics) can follow it for you.';
+      : 'Bars show the best mode for each hour. The autopilot (Settings › Advanced features › Mining economics) can follow it for you.';
     // last 12 months
     const bt = econ.backtest, tb = $('econYearTable'); tb.textContent = '';
     if (bt) {
@@ -2139,6 +2194,71 @@
   $('party').addEventListener('keydown', ev => { if (ev.key === 'Escape') $('partyClose').click(); });
   $('partyPreview').addEventListener('click', () => celebrate(null, true));
   setInterval(checkBlock, 60000);
+
+  // ---------------------------------------------------------------- Settings: Advanced features (remembered per device)
+  const ADV_KEY = 'houstonAdvanced';
+  try { if (localStorage.getItem(ADV_KEY) === '1') $('advSettings').open = true; } catch (e) {}
+  $('advSettings').addEventListener('toggle', () => {
+    try { localStorage.setItem(ADV_KEY, $('advSettings').open ? '1' : '0'); } catch (e) {}
+    if ($('advSettings').open) loadWallet();
+  });
+  async function showSettingsCard(id) {              // open Settings at a card, even one under Advanced features
+    await go('settings');
+    const card = $(id);
+    if (card && $('advSettings').contains(card)) $('advSettings').open = true;
+    if (card) setTimeout(() => card.scrollIntoView({ block: 'start', behavior: 'smooth' }), 50);
+  }
+
+  // ---------------------------------------------------------------- connect a wallet (Settings › Advanced)
+  let wal = null, walShown = false, walBusy = false;
+  async function loadWallet() {
+    if (!$('advSettings').open || !token || view !== 'settings') return;
+    try {
+      const d = await gql('query { Settings { read { result { settings { nodeAllowLan nodeRpcPassword nodeSoftware } } error { message } } } }');
+      const st = d.Settings.read.result && d.Settings.read.result.settings;
+      wal = st ? { lan: !!st.nodeAllowLan, pass: st.nodeRpcPassword || '', sw: st.nodeSoftware } : null;
+    } catch (e) { if (handleAuthError(e)) return; wal = null; }
+    renderWallet();
+  }
+  function renderWallet() {
+    const sw = $('walLan'), kv = $('walKv');
+    sw.disabled = !wal || walBusy;
+    sw.setAttribute('aria-checked', String(!!(wal && wal.lan)));
+    kv.textContent = '';
+    const host = location.hostname, ts = /\.ts\.net$/.test(host) || /^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(host);
+    const add = (k, v) => kv.append(el('div', {}, el('span', {}, k), el('b', { style: 'font-family:var(--mono);font-weight:500' }, v)));
+    add(ts ? 'Address (Tailscale)' : 'Address', host);
+    add('Port', '8332');
+    add('User', 'futurebit');
+    add('Password', !wal ? '–' : !wal.pass ? 'not set' : walShown ? wal.pass : '••••••••••');
+    $('walShow').textContent = walShown ? 'Hide password' : 'Show password';
+    $('walShow').disabled = $('walCopy').disabled = !(wal && wal.pass);
+    $('walLanSub').textContent = !wal ? 'Couldn\'t read the node settings.' : wal.lan
+      ? 'On: wallets on your network (and your Tailscale devices) can connect. Changing it restarts the node.'
+      : 'Off: turn this on first. It\'s the Apollo\'s "Allow LAN connections"; changing it restarts the node.';
+  }
+  $('walShow').addEventListener('click', () => { walShown = !walShown; renderWallet(); });
+  $('walCopy').addEventListener('click', async () => {
+    if (!wal || !wal.pass) return;
+    try { await navigator.clipboard.writeText(wal.pass); toast('Password copied.', 'ok'); }
+    catch (e) { walShown = true; renderWallet(); toast('Select the password and copy it.'); }
+  });
+  $('walLan').addEventListener('click', async () => {
+    if (!wal || walBusy) return;
+    const on = !wal.lan;
+    if (!(await ask(on ? 'Allow wallets on your network?' : 'Stop allowing wallets?', (on
+      ? 'Wallets on your home network (and over Tailscale) can then use your node with the password above. '
+      : 'Wallets will no longer be able to connect. ') + 'The Apollo restarts its Bitcoin node to apply (a minute or two; mining continues unless you solo mine).', on ? 'Allow' : 'Turn off'))) return;
+    walBusy = true; renderWallet();
+    try {
+      const d = await gql('query ($l: Boolean, $n: NodeSoftware) { Settings { update(input: { nodeAllowLan: $l, nodeSoftware: $n }) { result { settings { nodeAllowLan } } error { message } } } }',
+        { l: on, n: wal.sw }, 120000);
+      if (d.Settings.update.error) throw new Error(d.Settings.update.error.message);
+      wal.lan = on;
+      toast(on ? 'Wallets can connect once the node is back (a minute or two).' : 'Wallet access turned off.', 'ok');
+    } catch (e) { if (!handleAuthError(e)) toast(e.message === 'timeout' ? 'No reply yet. The Apollo may still be restarting the node.' : e.message, 'err'); }
+    finally { walBusy = false; renderWallet(); }
+  });
 
   // ---------------------------------------------------------------- your other Apollos
   async function loadFleet() {

@@ -14,7 +14,7 @@ Every request needs the header `Authorization: Bearer <your key>`.
 
 ## 1. Get a key
 
-Open Houston › **Settings › Siri, Google & shortcuts › Create a key**. Copy it.
+Open Houston › **Settings › Advanced features › Siri, Google & shortcuts › Create a key**. Copy it.
 
 - The key can only use the endpoints above: read the status and run those actions. It can't change your schedule, settings or Apollo password.
 - **New key** replaces it (old shortcuts stop working); **Turn off** disables shortcut access completely.

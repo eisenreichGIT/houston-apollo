@@ -26,7 +26,7 @@ import urllib.error
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-VERSION = "2.7.0"
+VERSION = "2.8.0"
 HERE = os.path.dirname(os.path.realpath(__file__))
 WEB_DIR = os.path.realpath(os.environ.get("HOUSTON_WEB", os.path.join(HERE, "web")))
 STATE_DIR = os.environ.get("STATE_DIRECTORY") or os.environ.get("HOUSTON_STATE") or os.path.join(HERE, "state")
@@ -401,7 +401,30 @@ def validate(s):
     tz = s.get("tz")
     if tz is not None and not valid_tz(tz):
         raise ValueError("Unknown time zone '%s'" % tz)
-    return {"enabled": bool(s.get("enabled", True)), "base": base, "windows": out, "tz": tz,
+    wx = s.get("weather") or {}
+    rules = wx.get("rules") if isinstance(wx, dict) else None
+    if rules is None:
+        rules = []
+    if not isinstance(rules, list) or len(rules) > 4:
+        raise ValueError("up to 4 weather rules")
+    wout = []
+    for i, r in enumerate(rules, 1):
+        if not isinstance(r, dict) or r.get("when") not in ("below", "above"):
+            raise ValueError("weather rule %d: pick below or above" % i)
+        try:
+            t = float(r.get("tempC"))
+        except (TypeError, ValueError):
+            raise ValueError("weather rule %d: the temperature must be a number" % i)
+        if not -40 <= t <= 50:
+            raise ValueError("weather rule %d: the temperature must be between -40 and 122 °F (-40 and 50 °C)" % i)
+        if not valid_mode(r.get("mode"), iii):
+            raise ValueError("weather rule %d: mode '%s' isn't available on this Apollo" % (i, r.get("mode")))
+        wout.append({"when": r["when"], "tempC": round(t, 1), "mode": r["mode"]})
+    lows = [r["tempC"] for r in wout if r["when"] == "below"]
+    highs = [r["tempC"] for r in wout if r["when"] == "above"]
+    if lows and highs and max(lows) >= min(highs):
+        raise ValueError("weather rules overlap: a 'below' temperature must be lower than every 'above' temperature")
+    return {"enabled": bool(s.get("enabled", True)), "base": base, "windows": out, "tz": tz, "weather": {"rules": wout},
             "updated": dt.datetime.now().isoformat(timespec="seconds")}
 
 
@@ -482,6 +505,7 @@ def tick(now):
         return
     if get_settings()["econ"]["autopilot"].get("mode") == "run":
         return                                   # the economics autopilot is running the Apollo
+    wx_rule, wx_temp = weather_eval(sched)
     due = []
     for d, hhmm, action in events(sched):
         h, m = map(int, hhmm.split(":"))
@@ -491,10 +515,21 @@ def tick(now):
                 key = "%s %s %s" % (t.strftime("%Y-%m-%d"), hhmm, action)
                 if key not in fired:
                     due.append((key, action))
+    token = read_json(AUTH_FILE, {}).get("token")
+    weather_step(sched, wx_rule, wx_temp, token, now)
     if not due:
         return
-    token = read_json(AUTH_FILE, {}).get("token")
+    active = _wx.get("rule")
     for key, action in due:
+        if active is not None and action in MODES or (active is not None and action.startswith("custom:")):
+            r = sched["weather"]["rules"][active]
+            fired[key] = now.isoformat(timespec="seconds")
+            with LOCK:
+                write_json(FIRED_FILE, fired)
+            add_activity(action, True, "Skipped %s: the weather rule (%s) keeps %s" % (label(action), weather_text(r), label(r["mode"])))
+            continue
+        if active is not None and action.startswith("start@"):
+            action = "start@" + sched["weather"]["rules"][active]["mode"]
         fired[key] = now.isoformat(timespec="seconds")
         with LOCK:  # mark first, so a slow action is never started twice
             cutoff = (now - dt.timedelta(days=2)).strftime("%Y-%m-%d")
@@ -511,6 +546,81 @@ def tick(now):
             msg = "Sign-in expired: open Houston and save the schedule again" if code == "UNAUTHENTICATED" else str(e)
             add_activity(action, False, msg)
             log("schedule: %s FAILED: %s" % (action, msg))
+
+
+# --------------------------------------------------------------------------- weather rules
+# "Turbo below 40 °F, Whisper above 75 °F": the outdoor temperature (Open-Meteo, for the ZIP code or town in
+# Settings) picks the mode while a rule applies, over the time windows. Rules change the mode only, never start
+# or stop the miner. To avoid flip-flopping: a rule stays on until it's 1 °C past its temperature, and Houston
+# switches at most every 30 minutes.
+WX_MIN_GAP = float(os.environ.get("HOUSTON_WX_GAP", "1800"))
+_wx = {"rule": None, "changed": 0.0}
+
+
+def weather_rules(sched=None):
+    sched = sched if sched is not None else read_json(SCHEDULE_FILE, {})
+    return ((sched.get("weather") or {}).get("rules") or []) if sched.get("enabled") else []
+
+
+def weather_text(r):
+    return "%s %s" % (r["when"], fmt_temp(r["tempC"], get_settings()["units"]))
+
+
+def weather_eval(sched):
+    """(index of the rule that applies now or None, outdoor temperature or None)."""
+    rules = weather_rules(sched)
+    if not rules:
+        return None, None
+    t = temp_at(time.time())
+    if t is None:
+        return _wx.get("rule"), None                 # no forecast right now: keep what we have
+    cur = _wx.get("rule")
+    for i, r in enumerate(rules):
+        h = 1.0 if i == cur else 0.0
+        if (r["when"] == "below" and t < r["tempC"] + h) or (r["when"] == "above" and t > r["tempC"] - h):
+            return i, t
+    return None, t
+
+
+def weather_step(sched, rule, temp, token, now):
+    rules = weather_rules(sched)
+    if not rules:
+        _wx.update(rule=None)
+        return
+    if rule == _wx.get("rule") or temp is None:
+        return
+    if _wx.get("changed") and time.time() - _wx["changed"] < WX_MIN_GAP:
+        return
+    prev = _wx.get("rule")
+    _wx.update(rule=rule, changed=time.time())
+    units = get_settings()["units"]
+    if rule is not None:
+        target, why = rules[rule]["mode"], "%s outside, %s" % (fmt_temp(temp, units), weather_text(rules[rule]))
+    else:
+        exp = expected_now(sched) or {}
+        target = exp.get("mode") or sched.get("base") or "eco"
+        why = "%s outside, no weather rule applies" % fmt_temp(temp, units)
+        if prev is None:
+            return
+    if not token:
+        add_activity(target, False, "Weather rule: not signed in (open Houston and save the schedule once)")
+        return
+    try:
+        msg = run_action(target, token)
+        add_activity(target, True, "%s (%s)" % (msg, why))
+        log("weather rule: %s -> %s (%s)" % (target, msg, why))
+    except Exception as e:
+        add_activity(target, False, "Weather rule: %s" % e)
+        log("weather rule: %s FAILED: %s" % (target, e))
+
+
+def weather_view(sched):
+    rules = weather_rules(sched)
+    geo = _econ.get("geo") or {}
+    t = temp_at(time.time())
+    loc = (get_settings()["econ"]["heat"].get("location") or "").strip()
+    return {"tempC": t, "place": geo.get("name"), "location": loc, "rule": _wx.get("rule") if rules else None,
+            "error": (_econ.get("errors") or {}).get("weather")}
 
 
 # --------------------------------------------------------------------------- settings
@@ -531,7 +641,7 @@ def default_settings():
         "currency": "$",
         "alerts": {"enabled": False, "server": "https://ntfy.sh", "topic": "",
                    "offline": True, "hot": True, "hotC": 80, "hashrate": True, "node": True, "disk": True, "block": True,
-                   "update": True, "econ": True, "report": True},
+                   "update": True, "econ": True, "report": True, "digest": False, "digestTime": "08:00"},
         "apollos": [],                # other Apollos: [{"name": "Garage", "host": "192.168.1.51"}]
         "automation": {"key": None},  # key for Siri Shortcuts / HTTP Shortcuts (see /api/v1/...)
         "price": {"enabled": True, "fiat": "USD"},   # bitcoin price ticker
@@ -587,9 +697,13 @@ def validate_settings(new, current):
         a = new["alerts"]
         if not isinstance(a, dict):
             raise ValueError("alerts must be an object")
-        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block", "update", "econ", "report"):
+        for k in ("enabled", "offline", "hot", "hashrate", "node", "disk", "block", "update", "econ", "report", "digest"):
             if k in a:
                 s["alerts"][k] = bool(a[k])
+        if "digestTime" in a:
+            if not TIME_RE.match(str(a["digestTime"] or "")):
+                raise ValueError("daily digest time must be like 08:00")
+            s["alerts"]["digestTime"] = a["digestTime"]
         if "server" in a:
             srv = str(a["server"] or "https://ntfy.sh").strip().rstrip("/")
             if not URL_RE.match(srv):
@@ -1973,13 +2087,14 @@ def fetch_archive(geo):
 
 def refresh_econ(force=False):
     s = get_settings()
-    if not s["econ"].get("enabled"):
+    wx = bool(weather_rules())
+    if not s["econ"].get("enabled") and not wx:
         return
     now = time.time()
     with _econ_lock:
         state = _econ
         net = state.get("network")
-        if force or not net or now - net.get("at", 0) >= ECON_EVERY:
+        if s["econ"].get("enabled") and (force or not net or now - net.get("at", 0) >= ECON_EVERY):
             try:
                 state["network"] = fetch_econ_network()
                 state["errors"].pop("network", None)
@@ -1987,7 +2102,7 @@ def refresh_econ(force=False):
                 state["errors"]["network"] = str(e)[:200]
                 log("economics: network data not updated: %s" % e)
         loc = (s["econ"]["heat"].get("location") or "").strip()
-        if loc and s["econ"]["heat"].get("type") != "none":
+        if loc and (s["econ"]["heat"].get("type") != "none" or wx):
             saved = read_json(ECON_FILE, {})
             geo = saved.get("geo")
             try:
@@ -3095,16 +3210,17 @@ def health_view(token):
         e = (_econ.get("errors") or {})
         add("Internet", "Network numbers (mempool.space)", "ok" if net and not e.get("network") else "warn",
             ("Updated %s" % _ago(_age(net.get("at")))) if net else "Not loaded" + (": " + e["network"] if e.get("network") else ""))
-        if s["econ"]["heat"].get("type") != "none":
-            add("Internet", "Weather (Open-Meteo)", "ok" if _econ.get("forecast") and not e.get("weather") else "warn",
-                (_econ.get("geo") or {}).get("name") or e.get("weather") or "Not loaded",
-                None if _econ.get("forecast") else "Check the ZIP code or town in Settings › Mining economics.")
+    if s["econ"]["heat"].get("type") != "none" or weather_rules():
+        e = (_econ.get("errors") or {})
+        add("Internet", "Weather (Open-Meteo)", "ok" if _econ.get("forecast") and not e.get("weather") else "warn",
+            (_econ.get("geo") or {}).get("name") or e.get("weather") or "Not loaded",
+            None if _econ.get("forecast") else "Check your ZIP code or town (Schedule › Weather rules, or Mining economics › Heat).")
     pk = (s.get("pool") or {}).get("kind", "none")
     if pk != "none":
         ps = read_json(POOL_FILE, {})
         add("Internet", POOL_NAMES[pk], "ok" if ps.get("days") is not None and not ps.get("error") else "warn",
             ("Error: " + ps["error"]) if ps.get("error") else ("Updated %s" % _ago(_age(ps.get("at")))) if ps.get("at") else "Not loaded yet",
-            "Check the address or token in Settings › Mining economics › Pool." if ps.get("error") else None)
+            "Check the address or token in Settings › Advanced features › Mining economics › Pool." if ps.get("error") else None)
     add("Internet", "GitHub (Houston updates)", "ok" if not _hupd.get("error") else "warn",
         "Checked %s" % _ago(_age(_hupd.get("checked"))) if not _hupd.get("error") else _hupd["error"])
     # clock: compare with a web server's clock (the price source's Date header)
@@ -3129,11 +3245,68 @@ def health_view(token):
     return {"checks": out, "summary": summary, "at": int(time.time()), "version": VERSION}
 
 
+def digest_text(s, rec, day):
+    """The daily digest: yesterday's numbers, the price, anything that needs attention, the next change."""
+    parts = []
+    if rec:
+        fee = float(s["econ"].get("poolFee") or 0)
+        earned = (rec.get("rev") or 0) * (1 - fee / 100)
+        sats = int(round((rec.get("btc") or 0) * (1 - fee / 100) * 1e8))
+        net = earned + (rec.get("heat") or 0) - (rec.get("cost") or 0)
+        line = "Yesterday: earned %s (%s sats), electricity %s" % (money_txt(earned, s), format(sats, ","), money_txt(rec.get("cost") or 0, s))
+        if rec.get("heat"):
+            line += ", heat saved %s" % money_txt(rec["heat"], s)
+        parts.append(line + ", net %s." % money_txt(net, s))
+        up = rec["on"] / rec["secs"] if rec.get("secs") else 0
+        ths = rec["thsS"] / rec["on"] if rec.get("on") else 0
+        parts.append("Mining %d%% of the time%s." % (round(up * 100), (", %.2f TH/s on average" % ths) if ths else ""))
+    else:
+        parts.append("No readings for yesterday.")
+    with LOCK:
+        p = dict(_price)
+    if p.get("price"):
+        ch = p.get("change24")
+        parts.append("Bitcoin %s%s." % (format(int(round(p["price"])), ","), "" if ch is None else " (%+.1f%% in 24 h)" % ch))
+    names = {"offline": "the miner is stopped", "unreachable": "Houston can't reach the Apollo", "hot": "it's running hot",
+             "hashrate": "hashrate is down", "node": "the node is stopped", "disk": "the node drive is almost full"}
+    issues = [txt for k, txt in names.items() if _alert_state.get(k, {}).get("active")]
+    parts.append(("Needs a look: " + ", ".join(issues) + ".") if issues else "No problems.")
+    nxt = upcoming(read_json(SCHEDULE_FILE, default_schedule()), count=1)
+    if nxt:
+        w = dt.datetime.fromisoformat(nxt[0]["time"])
+        parts.append("Next: %s at %s." % (nxt[0]["label"], w.strftime("%H:%M")))
+    return " ".join(parts)
+
+
+def digest_alert():
+    s = get_settings()
+    a = s["alerts"]
+    if not a.get("enabled") or not a.get("digest") or not alert_channels(s):
+        return
+    now = dt.datetime.now()
+    hh, mm = map(int, str(a.get("digestTime") or "08:00").split(":"))
+    if (now.hour, now.minute) < (hh, mm):
+        return
+    today, yday = now.strftime("%Y-%m-%d"), (now - dt.timedelta(days=1)).strftime("%Y-%m-%d")
+    _daily_load()
+    with _daily_lock:
+        if _daily["meta"].get("digested") == today:
+            return
+        _daily["meta"]["digested"] = today
+        rec = json.loads(json.dumps(_daily["days"].get(yday))) if _daily["days"].get(yday) else None
+    daily_save()
+    try:
+        notify("Your Apollo yesterday", digest_text(s, rec, yday), "sunrise", "low", s, tag="digest")
+        log("daily digest sent")
+    except Exception as e:
+        log("daily digest not sent: %s" % e)
+
+
 def extras_loop():
     """Pool payouts every hour, Houston update checks, the monthly report on the 1st."""
     time.sleep(25)
     while True:
-        for fn in (refresh_pool, houston_update_alert, report_alert):
+        for fn in (refresh_pool, houston_update_alert, report_alert, digest_alert):
             try:
                 fn()
             except Exception as e:
@@ -3670,7 +3843,7 @@ class Handler(BaseHTTPRequestHandler):
             with LOCK:
                 sch = read_json(SCHEDULE_FILE, default_schedule())
             return self._send(200, {"schedule": sch, "upcoming": upcoming(sch), "now": expected_now(sch),
-                                    "authorized": bool(stored_token())})
+                                    "authorized": bool(stored_token()), "weather": weather_view(sch)})
         if path == "/api/activity":
             return self._send(200, read_json(ACTIVITY_FILE, []))
         if path == "/api/settings":
@@ -3759,8 +3932,11 @@ class Handler(BaseHTTPRequestHandler):
         add_activity("schedule", True, ("Schedule saved: %d window%s" % (n, "" if n == 1 else "s")) if clean["enabled"] and n
                      else "Schedule turned off", source="app")
         log("schedule saved (%d windows, enabled=%s)" % (n, clean["enabled"]))
+        if clean["weather"]["rules"]:
+            _wx.update(changed=0.0)                      # a new rule set applies right away
+            threading.Thread(target=refresh_econ, args=(True,), daemon=True).start()
         return self._send(200, {"schedule": clean, "upcoming": upcoming(clean), "now": expected_now(clean),
-                                "authorized": True})
+                                "authorized": True, "weather": weather_view(clean)})
 
     def do_DELETE(self):
         if not self._host_ok():

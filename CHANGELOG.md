@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.8.0 (2026-10-28)
+
+- **Weather rules** in the schedule: pick the mode by the outdoor temperature, like *Turbo below 40°F* (more heat when it's cold) or *Whisper above 75°F*. While a rule applies it wins over your mode windows; when it stops applying, the schedule's mode comes back. Rules only change the mode, never start or stop the miner. They use the hourly forecast for your ZIP code or town, stay on until it's 1°C past their temperature, and switch at most every 30 minutes. Activity shows each switch with the temperature. (Suggested on r/FutureBit.)
+- **Daily digest** (Settings › Alerts, off by default): a morning notification at the time you pick, with yesterday's earnings (and sats), electricity, heat saved and net, mining time and hashrate, the bitcoin price, anything that needs a look, and the next scheduled change.
+- **Connect a wallet** (Settings › Advanced features): the address, port, user and password to use your Apollo's own Bitcoin node with Sparrow, step by step, plus a switch for the Apollo's *Allow LAN connections* (it restarts the node, as on the dashboard).
+- **Settings, tidied**: the everyday settings stay on top (Display, Electricity, Alerts, Houston, This Apollo, About); Mining economics, pools, autopilot, your other Apollos, Siri & shortcuts and the wallet guide fold into **Advanced features**. Each device remembers whether it's open.
+- **Home on a computer**: status, the next scheduled change and the Bitcoin node on the left; Start/Stop and the power modes on the right. Phones keep their order.
+
 ## 2.7.0 (2026-10-16)
 
 - **One-tap Houston updates**: Settings › Houston (this app) says when a new Houston is out, shows what's new, and *Update* installs it. Mining isn't affected; only Houston restarts. Houston itself never gets root: it leaves the version number for a small root helper (added by the installer), which downloads that release from GitHub itself, checks it, installs only Houston's files, and puts the old version back if the new one doesn't start. **Run the installer once more** to get it; after that, updates are one tap. New alert when an update is out (Settings › Alerts › Software updates).
@@ -57,7 +65,7 @@
 - Alerts can be on with only device notifications (no ntfy topic needed). Send a test to one device or everywhere.
 - The installer adds `python3-cryptography` (for the notification encryption) if it's missing.
 - **Security review and hardening** ([docs/security-review.md](docs/security-review.md)): only Houston's own script files can run in the app (no inline scripts); wrong passwords through Houston are rate limited; one-tap links (`#stop`, …) ask first unless opened from a home-screen shortcut; requests to other Apollos, push services and ntfy don't follow redirects and are size-capped; stricter request handling (size, timeouts); private files always 600; notification clicks always open Houston; extra browser security headers. A dedicated security test suite runs with the others.
-- Credits link to [@eisenreich](https://x.com/eisenreich) on X.
+- Credits link to [eisenreich on X](https://x.com/eisenreich).
 - Bitcoin tip jar (address and QR code) in Settings › About and in the README, with a Sponsor button on GitHub.
 
 ## 2.1.1 (2026-10-11)

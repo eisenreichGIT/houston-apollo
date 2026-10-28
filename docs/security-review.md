@@ -65,7 +65,7 @@ Houston uses the Apollo's own API, the one the Apollo dashboard uses, with your 
 | `api.kraken.com`, `api.exchange.coinbase.com` | Every 5 seconds while Houston is open on a device, once a minute otherwise, plus price history for the chosen time frame (cached, from every minute for 1H to daily for ALL); only if the bitcoin price is on (Settings) | Nothing about you: public price requests |
 | `mempool.space`, `api.coingecko.com`, `api.alternative.me`, `bitcoinmagazine.com` | Every 5 to 60 minutes, if *Network, market & news* is on (Settings) | Nothing about you: public data requests (the currency you picked, for market cap and volume) |
 | `mempool.space` (mining) | Every 30 minutes, if Mining economics is on | Nothing about you: difficulty history, block rewards and the next adjustment |
-| `geocoding-api.open-meteo.com`, `api.open-meteo.com`, `archive-api.open-meteo.com` | When you save a location, then every 30 minutes (forecast) and every 3 days (the past year's temperatures), only if you set up heat in Mining economics | The ZIP code or town you typed (to look it up); then only its coordinates rounded to about 1 km. No account or key |
+| `geocoding-api.open-meteo.com`, `api.open-meteo.com`, `archive-api.open-meteo.com` | When you save a location, then every hour (forecast) and every 3 days (the past year's temperatures), only if you set up heat in Mining economics or weather rules in the schedule | The ZIP code or town you typed (to look it up); then only its coordinates rounded to about 1 km. No account or key |
 | `api.github.com` (Houston's releases) | Twice a day, and when you press *Check for updates* | Nothing about you: a public request for the latest release of eisenreichGIT/houston-apollo |
 | `github.com` (Houston's release archive) | Only when you press *Update* under Houston (this app): the root helper downloads that version | Nothing about you: a public download |
 | `api.ocean.xyz` | Hourly, only if you connect OCEAN | Your payout address (already public on the blockchain and on OCEAN's site) |
@@ -119,10 +119,11 @@ So: use a strong, unique dashboard password, don't port-forward the Apollo, and 
 - **Push services see metadata**: that your device received a message, when, and roughly how big it was.
 - **Tailscale is installed with its official script** (`curl -fsSL https://tailscale.com/install.sh | sh`), the method Tailscale documents. Use `--no-tailscale` if you'd rather install it yourself.
 - **Houston updates come from GitHub.** One-tap updates trust Houston's GitHub repository over HTTPS, the same as installing Houston in the first place. Whoever controls that repository controls what an update installs (as Houston's sandboxed user, not as root). Updates only start when a signed-in user presses *Update* and confirms.
+- **Connect a wallet** shows the node's RPC password (the one the Apollo dashboard shows in its own *Connect* dialog) to anyone signed in to Houston, and its switch turns the Apollo's *Allow LAN connections* on or off. With it on, anything on your home network that has the password can use the node's RPC (over plain HTTP, like the dashboard). Houston never stores or logs that password.
 - **Pool tokens.** A Braiins Pool token is stored in `settings.json` (mode 600, readable only by Houston and root) and never sent back to the app. Make it read-only.
 - **Apollo software updates are FutureBit's.** Houston starts FutureBit's updater but can't check what it installs; that trust is the same as for the dashboard's Update button. The update is never started on its own: only when a signed-in user presses *Update* and confirms.
 - **Home-screen action links** (an icon for `#turbo`, say) run without asking. That's the point of them, but treat such icons like a remote control.
-- **No independent audit.** This review was done by the authors: the code was written by Claude (Anthropic's AI) and tested on real hardware by @eisenreich. Outside reviews are welcome.
+- **No independent audit.** This review was done by the authors: the code was written by Claude (Anthropic's AI) and tested on real hardware by [eisenreich](https://x.com/eisenreich). Outside reviews are welcome.
 
 ## Check it yourself
 

@@ -103,7 +103,7 @@ sudo bash /opt/apolloapi/backend/update
 | "Sign-in expired" in Activity | The Apollo's signing secret changed (you revoked tokens, or reinstalled the API). Open Houston, sign in, and save the schedule once |
 | Charts are empty | Houston saves one reading a minute; give it a few minutes. "Unknown" mode in energy = readings before you first signed in |
 | No alerts arrive | Settings › Alerts: alerts switched on, the topic in the ntfy app is identical, **Send a test**. The Apollo needs internet access to reach ntfy.sh |
-| Siri says the key is wrong | Settings › Siri: check the header is `Authorization` with value `Bearer hk_...` (with "Bearer " in front). After 20 wrong tries Houston blocks shortcuts for 10 minutes |
+| Siri says the key is wrong | Settings › Advanced features › Siri: check the header is `Authorization` with value `Bearer hk_...` (with "Bearer " in front). After 20 wrong tries Houston blocks shortcuts for 10 minutes |
 | Still have the old phone page | Re-run `install-houston.sh`; it removes `apollo-remote` automatically |
 
 ## SSH

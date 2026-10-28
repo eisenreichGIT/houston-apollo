@@ -155,6 +155,7 @@
   .metric b { display: block; font: 500 17px var(--mono); color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
   .metric span { font: 12px var(--mono); }
   .node-grid .metric { display: block; }
+  @media (max-width: 859.98px) { .control-grid { display: flex; flex-direction: column; } .control-grid > div { display: contents; } }
   .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
   button.big { border: 1px solid var(--line); border-radius: 10px; padding: 15px 10px; font-size: 17px; font-weight: 650; color: var(--text); background: var(--card);
     display: flex; align-items: center; justify-content: center; gap: 10px; }
@@ -538,6 +539,21 @@
   .plans li { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; align-items: center; }
   .plans li b { font-weight: 600; overflow-wrap: anywhere; } .plans .d { grid-column: 1; color: var(--muted); font-size: 13px; }
   .plans li .secondary { grid-row: 1 / span 2; grid-column: 2; }
+  .wx-row { display: grid; grid-template-columns: auto 92px auto minmax(0, 1fr) 36px; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .wx-row .input, .wx-row select { padding: 8px; font-size: 14px; }
+  .wx-row .u { color: var(--muted); font-size: 14px; }
+  .wx-row .linkbtn { width: 36px; height: 36px; padding: 0; display: grid; place-items: center; }
+  .wx-row .linkbtn svg { width: 18px; height: 18px; }
+  .wx-row.on { outline: 1px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+  @media (max-width: 480px) { .wx-row { grid-template-columns: 84px 58px auto minmax(92px, 1fr) 30px; gap: 6px; } .wx-row .input, .wx-row select { padding: 8px 6px; } .wx-row .u { font-size: 13px; } }
+  details.adv { margin-top: 8px; }
+  details.adv > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px; }
+  details.adv > summary::-webkit-details-marker { display: none; }
+  details.adv > summary::after { content: ""; margin-left: auto; flex: none; width: 9px; height: 9px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform .15s; }
+  details.adv[open] > summary::after { transform: rotate(-135deg); }
+  details.adv > summary > span { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  details.adv > summary b { font-size: 16px; }
   .tou-mo { grid-column: 1 / -1; font: 11.5px var(--mono); color: var(--muted); margin: -2px 0 0; }
   #party { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(8, 8, 6, .82); padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
   #party canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -627,9 +643,11 @@
       <div class="tk-chart"><div class="tk-spark" id="tkSpark"></div>
       <div class="tk-range" role="group" aria-label="Price time frame" id="tkRange"><button type="button" data-r="1H">1H</button><button type="button" data-r="1D">1D</button><button type="button" data-r="7D">7D</button><button type="button" data-r="1M">1M</button><button type="button" data-r="3M">3M</button><button type="button" data-r="6M">6M</button><button type="button" data-r="YTD">YTD</button><button type="button" data-r="1Y">1Y</button><button type="button" data-r="5Y">5Y</button><button type="button" data-r="ALL">ALL</button></div></div>
     </div>
+    <!-- Phones: one column, in the "order" of each block. Computers: status, schedule and node on the left;
+         Start/Stop and the power modes on the right. -->
     <div class="control-grid">
       <div>
-        <div class="card">
+        <div class="card" style="order:1">
           <div class="status">
             <div class="dot" id="dot"></div>
             <div>
@@ -651,16 +669,45 @@
           </div>
           <div class="poolline" id="poolLine"></div>
         </div>
-        <div class="actions">
-          <button class="big" id="startBtn" type="button"><span class="pw-ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span><span class="pw-tx"><b>Start</b><small id="startSub">Begin mining</small></span></button>
-          <button class="big" id="stopBtn" type="button"><span class="pw-ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg></span><span class="pw-tx"><b>Stop</b><small id="stopSub">Pause mining</small></span></button>
-        </div>
-        <button class="next hidden" id="updCard" type="button">
+        <button class="next hidden" id="updCard" type="button" style="order:3">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8 11l4-4 4 4"/></svg>
           <span><span class="sub">Apollo software</span><b id="updCardText"></b></span>
           <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
         </button>
-        <div class="card">
+        <button class="next hidden" id="nextCard" type="button" style="order:6">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+          <span><span class="sub" id="nextLabel">Next scheduled change</span><b id="nextText"></b></span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
+        </button>
+        <div class="card hidden" id="nodeCard" style="order:7">
+          <h2>Bitcoin node</h2>
+          <div id="nodeNoDrive" class="note hidden">This Apollo has no drive for the blockchain, so it doesn't run a node.</div>
+          <div id="nodeBody">
+            <div class="node-head">
+              <div class="dot" id="nodeDot"></div>
+              <b id="nodeStatus">Checking…</b>
+              <span class="sub" id="nodeSync"></span>
+            </div>
+            <div class="bar" id="nodeBar"><i id="nodeBarFill"></i></div>
+            <div class="node-grid">
+              <div class="metric"><b id="nodeHeight">–</b><span>Block</span></div>
+              <div class="metric"><b id="nodePeers">–</b><span>Peers</span></div>
+              <div class="metric"><b id="nodeDisk">–</b><span>On disk</span></div>
+            </div>
+            <div class="node-btns">
+              <button class="secondary" type="button" id="nodeStartBtn"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Start node</button>
+              <button class="secondary" type="button" id="nodeStopBtn"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>Stop node</button>
+            </div>
+            <div class="note hidden" id="nodeSoloNote" style="margin-top:10px">You're solo mining through this node: the miner needs it running.</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="actions" style="order:2">
+          <button class="big" id="startBtn" type="button"><span class="pw-ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span><span class="pw-tx"><b>Start</b><small id="startSub">Begin mining</small></span></button>
+          <button class="big" id="stopBtn" type="button"><span class="pw-ic"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg></span><span class="pw-tx"><b>Stop</b><small id="stopSub">Pause mining</small></span></button>
+        </div>
+        <div class="card" style="order:4">
           <h2>Power mode</h2>
           <div class="modes" id="modes"></div>
           <div class="custom-row hidden" id="customRow">
@@ -676,39 +723,10 @@
           </div>
           <p class="note" style="margin:12px 0 0">Changing mode restarts a running miner (about a minute). A stopped miner stays stopped and uses the new mode when it starts.</p>
         </div>
-        <div class="card hidden" id="fleetCard">
+        <div class="card hidden" id="fleetCard" style="order:5">
           <h2>Your Apollos</h2>
           <ul class="fleet" id="fleetList"></ul>
         </div>
-      </div>
-      <div>
-      <button class="next hidden" id="nextCard" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
-        <span><span class="sub" id="nextLabel">Next scheduled change</span><b id="nextText"></b></span>
-        <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
-      </button>
-      <div class="card hidden" id="nodeCard">
-        <h2>Bitcoin node</h2>
-        <div id="nodeNoDrive" class="note hidden">This Apollo has no drive for the blockchain, so it doesn't run a node.</div>
-        <div id="nodeBody">
-          <div class="node-head">
-            <div class="dot" id="nodeDot"></div>
-            <b id="nodeStatus">Checking…</b>
-            <span class="sub" id="nodeSync"></span>
-          </div>
-          <div class="bar" id="nodeBar"><i id="nodeBarFill"></i></div>
-          <div class="node-grid">
-            <div class="metric"><b id="nodeHeight">–</b><span>Block</span></div>
-            <div class="metric"><b id="nodePeers">–</b><span>Peers</span></div>
-            <div class="metric"><b id="nodeDisk">–</b><span>On disk</span></div>
-          </div>
-          <div class="node-btns">
-            <button class="secondary" type="button" id="nodeStartBtn"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>Start node</button>
-            <button class="secondary" type="button" id="nodeStopBtn"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>Stop node</button>
-          </div>
-          <div class="note hidden" id="nodeSoloNote" style="margin-top:10px">You're solo mining through this node: the miner needs it running.</div>
-        </div>
-      </div>
       </div>
     </div>
   </section>
@@ -717,7 +735,7 @@
   <section id="view-schedule" class="view hidden" role="tabpanel" aria-label="Schedule">
     <div id="schedLoading" class="empty">Loading schedule…</div>
     <div id="schedBody" class="hidden">
-      <div class="banner hidden" id="apBanner">The autopilot is running your Apollo (Settings › Mining economics), so the schedule is paused.</div>
+      <div class="banner hidden" id="apBanner">The autopilot is running your Apollo (Settings › Advanced features › Mining economics), so the schedule is paused.</div>
       <div class="banner hidden" id="authBanner">The Apollo needs your sign-in to run the schedule. Press <b>Save</b> once to fix that.</div>
       <div class="sched-grid">
         <div>
@@ -740,6 +758,14 @@
           <div id="windows"></div>
           <button class="add" id="addBtn" type="button">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add a time window</button>
+          <div class="card" id="wxCard" style="margin-top:14px">
+            <h2>Weather rules <span class="spacer"></span><span class="sub" id="wxNow" style="text-transform:none;letter-spacing:0"></span></h2>
+            <p class="note" style="margin-top:0">Pick the mode by the outdoor temperature, like <b style="color:var(--text)">Turbo below 40°F</b> (more heat when it's cold) or <b style="color:var(--text)">Whisper above 75°F</b>. While a rule applies it wins over your mode windows. Rules only change the mode; they never start or stop the miner.</p>
+            <div id="wxRules"></div>
+            <div class="btnrow" style="margin:2px 0 0"><button class="secondary small" type="button" id="wxAdd">Add a weather rule</button></div>
+            <div class="row-field hidden" id="wxLocRow" style="margin-top:14px"><label for="wxLoc">Your ZIP code or town<span class="sub">For the outdoor temperature (Open-Meteo)</span></label><input id="wxLoc" type="text" maxlength="80" autocomplete="postal-code" placeholder="16803"><button class="secondary small" type="button" id="wxLocSave">Save</button></div>
+            <p class="note" id="wxNote" style="margin-bottom:0"></p>
+          </div>
           <div class="savebar hidden" id="saveBar">
             <span id="saveText">Unsaved changes</span>
             <button class="secondary" type="button" id="discardBtn">Discard</button>
@@ -919,7 +945,7 @@
             <div class="kv" id="poolKv" style="margin-top:12px"></div>
             <p class="note" id="poolNote" style="margin-bottom:0"></p>
           </div>
-          <div class="card note hidden" id="poolSetup">Connect your pool (Settings › Mining economics › Pool) to compare what it pays with what Houston expects. Works with OCEAN and Braiins Pool.</div>
+          <div class="card note hidden" id="poolSetup">Connect your pool (Settings › Advanced features › Mining economics › Pool) to compare what it pays with what Houston expects. Works with OCEAN and Braiins Pool.</div>
         </div>
       </div>
     </div>
@@ -998,6 +1024,98 @@
             </details>
           </div>
         </div>
+        <div class="card"><h2>Alerts on your phone</h2>
+          <p class="note" style="margin-top:0">Houston tells you when your Apollo stops unexpectedly, runs hot, loses hashrate, its node stops or its drive fills up, when your solo pool finds a block, and when new Apollo software is out. Use either way below, or both.</p>
+          <div class="row-field"><span class="lbl">Send alerts</span><button class="switch" id="alertsSwitch" type="button" role="switch" aria-checked="false" aria-label="Alerts on or off"></button></div>
+          <div class="channel">
+            <div class="ch-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><b>Notifications on this device</b><span class="pill" id="pushState">Off</span></div>
+            <p class="note" id="pushHint">Regular notifications from the Houston app. No extra app or account.</p>
+            <div class="btnrow"><button class="primary small" type="button" id="pushOn">Turn on for this device</button><button class="secondary small hidden" type="button" id="pushTest">Send a test here</button><button class="linkbtn danger-link hidden" type="button" id="pushOff">Turn off here</button></div>
+            <ul class="devices" id="pushDevices"></ul>
+          </div>
+          <div class="channel">
+            <div class="ch-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><b>ntfy app</b><span class="pill" id="ntfyState">Off</span></div>
+            <p class="note">Works on any phone with plain http. Install the free <b style="color:var(--text)">ntfy</b> app (Android, iPhone), tap +, and subscribe to the topic below.</p>
+            <div class="row-field"><label for="topic">Topic<span class="sub">Like a password: hard to guess. Leave empty to not use ntfy.</span></label>
+              <input id="topic" type="text" maxlength="64" autocomplete="off" spellcheck="false"></div>
+            <div class="btnrow" style="margin:-4px 0 4px"><button class="linkbtn" type="button" id="newTopic">Make a random topic</button></div>
+            <details class="table"><summary>Your own ntfy server</summary>
+              <div class="row-field" style="margin-top:8px"><label for="ntfyServer">Server</label><input id="ntfyServer" type="url" placeholder="https://ntfy.sh"></div>
+            </details>
+          </div>
+          <div class="checks" id="alertChecks">
+            <label><input type="checkbox" data-a="offline">Stopped unexpectedly</label>
+            <label><input type="checkbox" data-a="hot">Running hot</label>
+            <label><input type="checkbox" data-a="hashrate">Hashrate drop</label>
+            <label><input type="checkbox" data-a="node">Node stopped</label>
+            <label><input type="checkbox" data-a="disk">Node drive almost full</label>
+            <label><input type="checkbox" data-a="block">Solo block found</label>
+            <label><input type="checkbox" data-a="update">Software updates</label>
+            <label><input type="checkbox" data-a="econ">Mining economics</label>
+            <label><input type="checkbox" data-a="report">Monthly report</label>
+          </div>
+          <div class="row-field"><label for="hotLimit">Hot above<span class="sub">Hashboard temperature</span></label>
+            <input id="hotLimit" class="short" type="number" step="1"><span id="hotUnit" class="sub">°F</span></div>
+          <div class="row-field"><label for="digestTime">Daily digest<span class="sub">A morning note: yesterday's earnings and costs, mining time, the price, anything that needs a look</span></label>
+            <input id="digestTime" class="short" type="time" value="08:00" aria-label="Daily digest time" style="max-width:120px">
+            <button class="switch" id="digestSwitch" type="button" role="switch" aria-checked="false" aria-label="Daily digest"></button></div>
+          <div class="btnrow" style="margin-top:12px"><button class="primary small" type="button" id="saveAlerts">Save</button><button class="secondary small" type="button" id="testAlert">Send a test everywhere</button></div>
+          <div class="btnrow" style="margin-top:4px"><button class="linkbtn" type="button" id="partyPreview">Preview the block-found celebration</button></div>
+        </div>
+      </div>
+      <div>
+        <div class="card hidden" id="appCard"><h2>Houston app</h2>
+          <p class="note" style="margin-top:0" id="appNote">You're using the Houston app.</p>
+          <div class="btnrow"><button class="primary small" type="button" id="appSettings">App settings</button></div>
+        </div>
+        <div class="card" id="houCard"><h2>Houston (this app)</h2>
+          <div class="row-field"><span class="lbl">Version <span id="houVer">–</span><span class="sub" id="houSub">Checking…</span></span>
+            <button class="primary small hidden" type="button" id="houBtn">Update</button>
+          </div>
+          <div id="houProg" class="hidden" style="margin:-4px 0 14px">
+            <div class="bar" style="margin-top:0"><i id="houBar"></i></div>
+            <p class="note" id="houNote" style="margin:8px 0 0"></p>
+          </div>
+          <details class="table hidden" id="houNotesBox" style="margin:-6px 0 12px"><summary>What's new</summary><div class="note" id="houNotes" style="white-space:pre-wrap"></div></details>
+          <div class="btnrow" style="margin:-6px 0 0"><button class="linkbtn" type="button" id="houCheck">Check for updates</button><button class="linkbtn" type="button" id="houHealth">Run a health check</button></div>
+        </div>
+        <div class="card" id="apolloCard"><h2>This Apollo</h2>
+          <div class="row-field"><span class="lbl">FutureBit Apollo software<span class="sub" id="updSub">Checking…</span></span>
+            <button class="primary small hidden" type="button" id="updBtn">Update</button>
+          </div>
+          <div id="updProg" class="hidden" style="margin:-4px 0 14px">
+            <div class="bar" style="margin-top:0"><i id="updBar"></i></div>
+            <p class="note" id="updNote" style="margin:8px 0 0"></p>
+          </div>
+          <div class="btnrow" style="margin:-6px 0 14px"><button class="linkbtn" type="button" id="updCheck">Check for updates</button></div>
+          <div class="row-field" style="margin-bottom:0"><span class="lbl">Front status light<span class="sub">The light on the front of the Apollo. Changing it restarts a running miner.</span></span>
+            <button class="switch" id="ledSwitch" type="button" role="switch" aria-checked="true" aria-label="Front status light" disabled></button>
+          </div>
+        </div>
+        <div class="card"><h2>About</h2>
+          <div class="kv">
+            <div><span>Houston (this app)</span><b id="abVer">–</b></div>
+            <div><span>Apollo</span><b id="abModel">–</b></div>
+            <div><span>Schedule time zone</span><b id="abTz">–</b></div>
+            <div><span>Background sign-in</span><b id="abAuth">–</b></div>
+          </div>
+          <p class="note">Unofficial community project, not affiliated with FutureBit. Code by Claude (Anthropic), idea by <a href="https://x.com/eisenreich" target="_blank" rel="noopener noreferrer">@eisenreich</a>.</p>
+          <div class="tipjar">
+            <a class="tipjar-qr" href="bitcoin:bc1qpcu0elnfkqw7y7z8c8qfmyf6xkvktdv5q7ujh0" aria-label="Open the tip jar address in a bitcoin wallet"><svg role="img" aria-label="QR code for the Houston bitcoin tip jar" viewBox="0 0 132 132" class="segno"><path transform="scale(4)" class="qrline" stroke="#16150f" d="M0 0.5h7m1 0h1m2 0h3m2 0h2m1 0h1m1 0h3m2 0h7m-33 1h1m5 0h1m2 0h1m1 0h2m3 0h1m3 0h1m5 0h1m5 0h1m-33 1h1m1 0h3m1 0h1m1 0h6m2 0h2m2 0h2m1 0h2m1 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m4 0h1m7 0h1m1 0h1m2 0h1m1 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m3 0h2m3 0h1m1 0h1m1 0h1m1 0h1m1 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m1 0h4m3 0h1m3 0h1m1 0h1m2 0h1m1 0h1m5 0h1m-33 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-22 1h1m3 0h2m1 0h3m1 0h1m1 0h1m-25 1h1m1 0h1m3 0h2m5 0h1m2 0h2m2 0h2m1 0h1m3 0h1m2 0h1m1 0h1m-28 1h1m2 0h1m3 0h3m1 0h3m1 0h1m1 0h1m1 0h3m3 0h2m-32 1h4m2 0h1m1 0h1m2 0h2m2 0h2m2 0h2m2 0h1m2 0h2m2 0h1m1 0h1m-33 1h2m2 0h2m2 0h2m3 0h1m3 0h1m1 0h2m1 0h1m3 0h4m1 0h1m-28 1h1m1 0h1m1 0h1m1 0h1m1 0h2m3 0h1m1 0h3m1 0h1m2 0h1m1 0h1m-29 1h3m1 0h2m1 0h1m1 0h1m1 0h1m10 0h2m3 0h1m2 0h1m1 0h1m-31 1h1m2 0h2m1 0h2m1 0h5m3 0h3m1 0h3m4 0h1m1 0h1m-31 1h1m4 0h2m1 0h2m6 0h1m3 0h3m1 0h1m1 0h2m2 0h1m-31 1h1m1 0h4m4 0h2m1 0h1m2 0h3m1 0h2m2 0h2m1 0h4m-32 1h1m7 0h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m2 0h1m1 0h1m-29 1h1m1 0h1m2 0h2m3 0h1m1 0h9m1 0h1m1 0h1m2 0h3m1 0h1m-32 1h2m1 0h2m1 0h1m1 0h2m4 0h1m2 0h3m1 0h1m2 0h2m1 0h2m2 0h1m-33 1h1m1 0h2m2 0h3m3 0h2m2 0h3m1 0h2m1 0h1m2 0h4m2 0h1m-31 1h1m2 0h1m1 0h1m3 0h3m2 0h1m1 0h1m5 0h2m1 0h1m1 0h1m2 0h1m-33 1h2m3 0h2m2 0h4m1 0h1m1 0h1m2 0h11m2 0h1m-31 1h1m1 0h2m1 0h1m1 0h1m1 0h2m2 0h2m1 0h1m5 0h1m1 0h1m1 0h1m3 0h1m-33 1h2m2 0h3m1 0h1m3 0h2m3 0h1m1 0h3m1 0h6m2 0h2m-25 1h1m2 0h1m1 0h2m1 0h3m1 0h2m1 0h2m3 0h1m-29 1h7m1 0h6m1 0h1m3 0h2m1 0h1m1 0h1m1 0h1m1 0h1m3 0h1m-33 1h1m5 0h1m3 0h1m1 0h2m1 0h3m2 0h1m3 0h1m3 0h2m1 0h1m-32 1h1m1 0h3m1 0h1m4 0h1m2 0h2m1 0h1m3 0h1m1 0h7m1 0h2m-33 1h1m1 0h3m1 0h1m2 0h2m2 0h1m3 0h1m1 0h1m3 0h3m2 0h2m1 0h2m-33 1h1m1 0h3m1 0h1m1 0h1m1 0h2m3 0h1m1 0h5m1 0h4m1 0h2m1 0h2m-33 1h1m5 0h1m2 0h2m3 0h1m3 0h1m3 0h1m2 0h1m1 0h3m-30 1h7m1 0h2m3 0h1m1 0h1m2 0h1m1 0h2m2 0h3m3 0h1m1 0h1"/></svg></a>
+            <div class="tipjar-txt">
+              <b>Bitcoin tip jar</b>
+              <span class="sub">Houston is free. If it saves you some clicks, a tip is appreciated.</span>
+              <code class="copy" id="tipAddr">bc1qpcu0elnfkqw7y7z8c8qfmyf6xkvktdv5q7ujh0</code>
+              <div class="btnrow"><button class="secondary small" type="button" id="copyTip">Copy address</button><a class="linkbtn" href="bitcoin:bc1qpcu0elnfkqw7y7z8c8qfmyf6xkvktdv5q7ujh0">Open in wallet</a></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="adv" id="advSettings">
+      <summary><span><b>Advanced features</b><span class="sub">Mining economics, time-of-use, heat and autopilot · pool payouts · your other Apollos · Siri &amp; shortcuts · connect a wallet</span></span></summary>
+      <div class="set-grid">
+        <div>
         <div class="card" id="econCard"><h2>Mining economics</h2>
           <p class="note" style="margin-top:0">Shows on Stats what your Apollo earns and costs, from its own readings, your electricity price, the network and the bitcoin price.</p>
           <div class="row-field"><span class="lbl">Show on Stats</span><button class="switch" id="econSwitch" type="button" role="switch" aria-checked="true" aria-label="Show mining economics"></button></div>
@@ -1035,70 +1153,21 @@
           </details>
           <div class="btnrow" style="margin-top:12px"><button class="primary small" type="button" id="saveEcon">Save</button></div>
         </div>
-        <div class="card"><h2>Alerts on your phone</h2>
-          <p class="note" style="margin-top:0">Houston tells you when your Apollo stops unexpectedly, runs hot, loses hashrate, its node stops or its drive fills up, when your solo pool finds a block, and when new Apollo software is out. Use either way below, or both.</p>
-          <div class="row-field"><span class="lbl">Send alerts</span><button class="switch" id="alertsSwitch" type="button" role="switch" aria-checked="false" aria-label="Alerts on or off"></button></div>
-          <div class="channel">
-            <div class="ch-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2.5"/><path d="M11 18.5h2"/></svg><b>Notifications on this device</b><span class="pill" id="pushState">Off</span></div>
-            <p class="note" id="pushHint">Regular notifications from the Houston app. No extra app or account.</p>
-            <div class="btnrow"><button class="primary small" type="button" id="pushOn">Turn on for this device</button><button class="secondary small hidden" type="button" id="pushTest">Send a test here</button><button class="linkbtn danger-link hidden" type="button" id="pushOff">Turn off here</button></div>
-            <ul class="devices" id="pushDevices"></ul>
-          </div>
-          <div class="channel">
-            <div class="ch-head"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><b>ntfy app</b><span class="pill" id="ntfyState">Off</span></div>
-            <p class="note">Works on any phone with plain http. Install the free <b style="color:var(--text)">ntfy</b> app (Android, iPhone), tap +, and subscribe to the topic below.</p>
-            <div class="row-field"><label for="topic">Topic<span class="sub">Like a password: hard to guess. Leave empty to not use ntfy.</span></label>
-              <input id="topic" type="text" maxlength="64" autocomplete="off" spellcheck="false"></div>
-            <div class="btnrow" style="margin:-4px 0 4px"><button class="linkbtn" type="button" id="newTopic">Make a random topic</button></div>
-            <details class="table"><summary>Your own ntfy server</summary>
-              <div class="row-field" style="margin-top:8px"><label for="ntfyServer">Server</label><input id="ntfyServer" type="url" placeholder="https://ntfy.sh"></div>
-            </details>
-          </div>
-          <div class="checks" id="alertChecks">
-            <label><input type="checkbox" data-a="offline">Stopped unexpectedly</label>
-            <label><input type="checkbox" data-a="hot">Running hot</label>
-            <label><input type="checkbox" data-a="hashrate">Hashrate drop</label>
-            <label><input type="checkbox" data-a="node">Node stopped</label>
-            <label><input type="checkbox" data-a="disk">Node drive almost full</label>
-            <label><input type="checkbox" data-a="block">Solo block found</label>
-            <label><input type="checkbox" data-a="update">Software updates</label>
-            <label><input type="checkbox" data-a="econ">Mining economics</label>
-            <label><input type="checkbox" data-a="report">Monthly report</label>
-          </div>
-          <div class="row-field"><label for="hotLimit">Hot above<span class="sub">Hashboard temperature</span></label>
-            <input id="hotLimit" class="short" type="number" step="1"><span id="hotUnit" class="sub">°F</span></div>
-          <div class="btnrow" style="margin-top:12px"><button class="primary small" type="button" id="saveAlerts">Save</button><button class="secondary small" type="button" id="testAlert">Send a test everywhere</button></div>
-          <div class="btnrow" style="margin-top:4px"><button class="linkbtn" type="button" id="partyPreview">Preview the block-found celebration</button></div>
         </div>
-      </div>
-      <div>
-        <div class="card hidden" id="appCard"><h2>Houston app</h2>
-          <p class="note" style="margin-top:0" id="appNote">You're using the Houston app.</p>
-          <div class="btnrow"><button class="primary small" type="button" id="appSettings">App settings</button></div>
-        </div>
-        <div class="card" id="houCard"><h2>Houston (this app)</h2>
-          <div class="row-field"><span class="lbl">Version <span id="houVer">–</span><span class="sub" id="houSub">Checking…</span></span>
-            <button class="primary small hidden" type="button" id="houBtn">Update</button>
-          </div>
-          <div id="houProg" class="hidden" style="margin:-4px 0 14px">
-            <div class="bar" style="margin-top:0"><i id="houBar"></i></div>
-            <p class="note" id="houNote" style="margin:8px 0 0"></p>
-          </div>
-          <details class="table hidden" id="houNotesBox" style="margin:-6px 0 12px"><summary>What's new</summary><div class="note" id="houNotes" style="white-space:pre-wrap"></div></details>
-          <div class="btnrow" style="margin:-6px 0 0"><button class="linkbtn" type="button" id="houCheck">Check for updates</button><button class="linkbtn" type="button" id="houHealth">Run a health check</button></div>
-        </div>
-        <div class="card" id="apolloCard"><h2>This Apollo</h2>
-          <div class="row-field"><span class="lbl">FutureBit Apollo software<span class="sub" id="updSub">Checking…</span></span>
-            <button class="primary small hidden" type="button" id="updBtn">Update</button>
-          </div>
-          <div id="updProg" class="hidden" style="margin:-4px 0 14px">
-            <div class="bar" style="margin-top:0"><i id="updBar"></i></div>
-            <p class="note" id="updNote" style="margin:8px 0 0"></p>
-          </div>
-          <div class="btnrow" style="margin:-6px 0 14px"><button class="linkbtn" type="button" id="updCheck">Check for updates</button></div>
-          <div class="row-field" style="margin-bottom:0"><span class="lbl">Front status light<span class="sub">The light on the front of the Apollo. Changing it restarts a running miner.</span></span>
-            <button class="switch" id="ledSwitch" type="button" role="switch" aria-checked="true" aria-label="Front status light" disabled></button>
-          </div>
+        <div>
+        <div class="card" id="walletCard"><h2>Connect a wallet</h2>
+          <p class="note" style="margin-top:0">Use your Apollo's own Bitcoin node with a desktop wallet like <b style="color:var(--text)">Sparrow</b>. Your wallet then checks balances and sends transactions through your node instead of someone else's server.</p>
+          <div class="row-field"><span class="lbl">Allow wallets on your network<span class="sub" id="walLanSub">The Apollo's "Allow LAN connections". Changing it restarts the node.</span></span>
+            <button class="switch" id="walLan" type="button" role="switch" aria-checked="false" aria-label="Allow wallets on your network" disabled></button></div>
+          <div class="kv" id="walKv"></div>
+          <div class="btnrow" style="margin-top:10px"><button class="secondary small" type="button" id="walShow">Show password</button><button class="secondary small" type="button" id="walCopy">Copy password</button></div>
+          <h3 class="sub-h">In Sparrow</h3>
+          <ol class="steps">
+            <li>Open <b>Settings</b> (on a Mac: <b>Preferences</b>), then <b>Server</b>, and pick <b>Bitcoin Core</b>.</li>
+            <li>Enter the address and port above, choose <b>User / Pass</b>, and type the user and password.</li>
+            <li>Press <b>Test Connection</b>. If the node is still syncing, Sparrow can use it once it's done.</li>
+          </ol>
+          <p class="note" style="margin-bottom:0" id="walNote">Away from home, use your Apollo's Tailscale address instead (with Tailscale on). Wallets that need an Electrum server (Electrum, BlueWallet, the Blockstream app) can't connect directly: the Apollo runs Bitcoin Core only. Keep the password private: it controls your node (not your coins). Never forward port 8332 on your router.</p>
         </div>
         <div class="card"><h2>Your Apollos</h2>
           <p class="note" style="margin-top:0">Add your other Apollos to see them all on the Home tab. If they run Houston too, you can jump straight to theirs.</p>
@@ -1125,26 +1194,9 @@
             </details>
           </div>
         </div>
-        <div class="card"><h2>About</h2>
-          <div class="kv">
-            <div><span>Houston (this app)</span><b id="abVer">–</b></div>
-            <div><span>Apollo</span><b id="abModel">–</b></div>
-            <div><span>Schedule time zone</span><b id="abTz">–</b></div>
-            <div><span>Background sign-in</span><b id="abAuth">–</b></div>
-          </div>
-          <p class="note">Unofficial community project, not affiliated with FutureBit. Code by Claude (Anthropic), idea by <a href="https://x.com/eisenreich" target="_blank" rel="noopener noreferrer">@eisenreich</a>.</p>
-          <div class="tipjar">
-            <a class="tipjar-qr" href="bitcoin:bc1qpcu0elnfkqw7y7z8c8qfmyf6xkvktdv5q7ujh0" aria-label="Open the tip jar address in a bitcoin wallet"><svg role="img" aria-label="QR code for the Houston bitcoin tip jar" viewBox="0 0 132 132" class="segno"><path transform="scale(4)" class="qrline" stroke="#16150f" d="M0 0.5h7m1 0h1m2 0h3m2 0h2m1 0h1m1 0h3m2 0h7m-33 1h1m5 0h1m2 0h1m1 0h2m3 0h1m3 0h1m5 0h1m5 0h1m-33 1h1m1 0h3m1 0h1m1 0h6m2 0h2m2 0h2m1 0h2m1 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m4 0h1m7 0h1m1 0h1m2 0h1m1 0h1m1 0h3m1 0h1m-33 1h1m1 0h3m1 0h1m3 0h2m3 0h1m1 0h1m1 0h1m1 0h1m1 0h1m2 0h1m1 0h3m1 0h1m-33 1h1m5 0h1m1 0h4m3 0h1m3 0h1m1 0h1m2 0h1m1 0h1m5 0h1m-33 1h7m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h1m1 0h7m-22 1h1m3 0h2m1 0h3m1 0h1m1 0h1m-25 1h1m1 0h1m3 0h2m5 0h1m2 0h2m2 0h2m1 0h1m3 0h1m2 0h1m1 0h1m-28 1h1m2 0h1m3 0h3m1 0h3m1 0h1m1 0h1m1 0h3m3 0h2m-32 1h4m2 0h1m1 0h1m2 0h2m2 0h2m2 0h2m2 0h1m2 0h2m2 0h1m1 0h1m-33 1h2m2 0h2m2 0h2m3 0h1m3 0h1m1 0h2m1 0h1m3 0h4m1 0h1m-28 1h1m1 0h1m1 0h1m1 0h1m1 0h2m3 0h1m1 0h3m1 0h1m2 0h1m1 0h1m-29 1h3m1 0h2m1 0h1m1 0h1m1 0h1m10 0h2m3 0h1m2 0h1m1 0h1m-31 1h1m2 0h2m1 0h2m1 0h5m3 0h3m1 0h3m4 0h1m1 0h1m-31 1h1m4 0h2m1 0h2m6 0h1m3 0h3m1 0h1m1 0h2m2 0h1m-31 1h1m1 0h4m4 0h2m1 0h1m2 0h3m1 0h2m2 0h2m1 0h4m-32 1h1m7 0h1m5 0h1m2 0h1m1 0h1m1 0h1m1 0h1m2 0h1m1 0h1m-29 1h1m1 0h1m2 0h2m3 0h1m1 0h9m1 0h1m1 0h1m2 0h3m1 0h1m-32 1h2m1 0h2m1 0h1m1 0h2m4 0h1m2 0h3m1 0h1m2 0h2m1 0h2m2 0h1m-33 1h1m1 0h2m2 0h3m3 0h2m2 0h3m1 0h2m1 0h1m2 0h4m2 0h1m-31 1h1m2 0h1m1 0h1m3 0h3m2 0h1m1 0h1m5 0h2m1 0h1m1 0h1m2 0h1m-33 1h2m3 0h2m2 0h4m1 0h1m1 0h1m2 0h11m2 0h1m-31 1h1m1 0h2m1 0h1m1 0h1m1 0h2m2 0h2m1 0h1m5 0h1m1 0h1m1 0h1m3 0h1m-33 1h2m2 0h3m1 0h1m3 0h2m3 0h1m1 0h3m1 0h6m2 0h2m-25 1h1m2 0h1m1 0h2m1 0h3m1 0h2m1 0h2m3 0h1m-29 1h7m1 0h6m1 0h1m3 0h2m1 0h1m1 0h1m1 0h1m1 0h1m3 0h1m-33 1h1m5 0h1m3 0h1m1 0h2m1 0h3m2 0h1m3 0h1m3 0h2m1 0h1m-32 1h1m1 0h3m1 0h1m4 0h1m2 0h2m1 0h1m3 0h1m1 0h7m1 0h2m-33 1h1m1 0h3m1 0h1m2 0h2m2 0h1m3 0h1m1 0h1m3 0h3m2 0h2m1 0h2m-33 1h1m1 0h3m1 0h1m1 0h1m1 0h2m3 0h1m1 0h5m1 0h4m1 0h2m1 0h2m-33 1h1m5 0h1m2 0h2m3 0h1m3 0h1m3 0h1m2 0h1m1 0h3m-30 1h7m1 0h2m3 0h1m1 0h1m2 0h1m1 0h2m2 0h3m3 0h1m1 0h1"/></svg></a>
-            <div class="tipjar-txt">
-              <b>Bitcoin tip jar</b>
-              <span class="sub">Houston is free. If it saves you some clicks, a tip is appreciated.</span>
-              <code class="copy" id="tipAddr">bc1qpcu0elnfkqw7y7z8c8qfmyf6xkvktdv5q7ujh0</code>
-              <div class="btnrow"><button class="secondary small" type="button" id="copyTip">Copy address</button><a class="linkbtn" href="bitcoin:bc1qpcu0elnfkqw7y7z8c8qfmyf6xkvktdv5q7ujh0">Open in wallet</a></div>
-            </div>
-          </div>
         </div>
       </div>
-    </div>
+    </details>
   </section>
 
   <footer id="foot"></footer>

@@ -4,12 +4,14 @@
 
 - **Live bitcoin price**: refreshed every 5 seconds while Houston is open, with time frames from 1 hour to all-time (1H … 5Y, ALL) and a chart on Stats (USD, EUR, GBP, CAD, AUD, JPY or CHF)
 - **Control**: start, stop, Eco / Balanced / Turbo, plus Houston's own **Whisper** mode on the Apollo II (half of Eco's power, the quietest). Apollo III: Super Eco and a custom 5–20 TH/s target. Start/stop the Bitcoin node too
+- **Weather rules**: "Turbo below 40°F, Whisper above 75°F", from the forecast for your ZIP code
 - **Schedule**: e.g. quiet Eco around the clock, Turbo on weekdays while nobody's home. The Apollo runs it itself, so no computer has to stay on
 - **Stats**: 24-hour and 7-day charts, electricity cost (and what Turbo adds), solo-mining odds and best share, node and system health
 - **Mining economics**: what your Apollo really earns, costs and saves in heat, from its own readings; the break-even price; the last 12 months replayed with real difficulty and prices; time-of-use electricity; and an **autopilot** that runs the mode that pays best (or suggests it)
 - **Monthly report** and **pool payouts**: each month's earnings, electricity, heat and net, with a notification on the 1st; what OCEAN or Braiins Pool actually paid next to what Houston expected
 - **Utility rate lookup** (US): your utility's plans by ZIP code, time-of-use and seasonal prices filled in
 - **Health check**: one screen that checks everything Houston depends on, with fixes
+- **Daily digest**: a morning note with yesterday's numbers; and a **wallet guide** to use your Apollo's node with Sparrow
 - **Bitcoin network & market**: Fear & Greed Index, block height and time since the last block, block time and difficulty, market cap, dominance, volume, sats per dollar, and the latest headlines
 - **Apollo software updates**: see when FutureBit releases a new version and install it from Houston, with progress. **Houston updates itself** with one tap too
 - **System logs**: the Apollo's miner, node, solo pool and system logs, filterable and live
@@ -97,7 +99,7 @@ docs/                      guides
 
 ## Credits
 
-Idea, real-hardware testing and sharing by **[@eisenreich](https://x.com/eisenreich)**, who wanted their Apollo to mine on a schedule without clicking through the dashboard.
+Idea, real-hardware testing and sharing by **[eisenreich on X](https://x.com/eisenreich)**, who wanted their Apollo to mine on a schedule without clicking through the dashboard.
 Code, design and docs by **Claude** (Anthropic's AI assistant), written during that conversation.
 
 ## Support the project

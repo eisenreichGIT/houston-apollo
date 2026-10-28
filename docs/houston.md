@@ -63,6 +63,8 @@ Sign in with your dashboard password. At home with Tailscale off, use the home a
 - **Change mode**: e.g. *Weekdays 9:30 AM to 4:30 PM: Turbo, then back to Eco.*
 - **Mine only**: the miner runs only during the window (optionally in a chosen mode) and is stopped the rest of the time; it can run overnight or have no stop time.
 
+**Weather rules** (Schedule › Weather rules): pick the mode by the outdoor temperature, like *Turbo below 40°F* (more heat when it's cold) or *Whisper above 75°F* (cooler and quieter in summer). Up to 4 rules; a "below" temperature must be lower than every "above" one. While a rule applies it wins over your mode windows (a window's mode change is skipped and logged); when no rule applies, your windows and normal mode decide again. Rules only change the mode: they never start or stop the miner, and a *Mine only* window that starts the miner starts it in the rule's mode. Houston uses the hourly forecast from Open-Meteo for the ZIP code or town you enter, keeps a rule on until it's 1°C (about 2°F) past its temperature, and switches at most every 30 minutes, so the miner doesn't keep restarting around the threshold. The autopilot, when it runs, takes over from the schedule and its weather rules.
+
 Times use the time zone shown under *Coming up* (your phone's or computer's when you first save; Houston offers to switch if they differ). After saving, Houston offers to apply what the schedule says right now. A mode change restarts a running miner (about a minute) and never starts a stopped one. If the Apollo was off at a scheduled time, Houston still runs it up to 3 minutes late (after a restart, say), but not later.
 
 **Activity**: what happened and who did it: *Schedule*, *You* (from Houston), *Shortcut* (Siri etc.), *Alert*, *Autopilot* or *Houston* (e.g. an Apollo software update finishing).
@@ -71,17 +73,23 @@ Times use the time zone shown under *Coming up* (your phone's or computer's when
 
 **Activity › Logs**: the Apollo's own logs, read through its API: **Miner**, **Node**, **Solo** (when you solo mine), **System** (the Apollo's syslog) and **Houston** (Houston's recent messages). Pick 100, 300 or 1000 lines, type to filter (e.g. `error`), turn on **Live** to refresh every 5 seconds, and copy or download what you see. Errors are tinted red, warnings amber. Bookmark `http://<apollo>:8088/#logs` to open straight to them.
 
-**Settings**:
+**Settings**: the everyday settings are on top; the rest folds into **Advanced features** (each device remembers whether it's open).
+- **Display**: **Appearance** (Light, Dark (default) or System, which follows your phone or computer; saved on each device separately, and the sun/moon button in the top bar switches between light and dark), **Temperature** in °F or °C, the **Bitcoin price** on or off and its currency (USD, EUR, GBP, CAD, AUD, JPY, CHF; Houston fetches it from Kraken's public API every 5 seconds while Houston is open somewhere, once a minute otherwise, with Coinbase as a backup, so the app itself never contacts outside sites), and **Network, market & news** on or off (from mempool.space, CoinGecko, alternative.me and Bitcoin Magazine, every 5 to 60 minutes).
+- **Electricity**: your price per kWh, for the cost tiles, or *Look up my utility's rates* (US, see [Mining economics](#mining-economics)).
+- **Alerts on your phone**: notifications on this device and/or the ntfy app, and the **daily digest**, see below.
 - **Houston (this app)**: Houston's version, *Update* when a new one is out (see [Updating Houston](#updating-houston)), and *Run a health check*.
 - **This Apollo**: the Apollo software version, with *Update* when FutureBit has a new one (see [Updating the Apollo software](#updating-the-apollo-software)), and the **Front status light** switch. Changing the light restarts a running miner (about a minute; Houston asks first). A stopped miner stays stopped and uses the setting when it starts.
-- **Appearance**: Light, Dark (default) or System, which follows your phone or computer. Saved on each device separately; the sun/moon button in the top bar switches between light and dark.
-- **Temperature**: °F or °C (°F by default).
-- **Bitcoin price**: on or off, and the currency (USD, EUR, GBP, CAD, AUD, JPY, CHF). Houston fetches it from Kraken's public API every 5 seconds while Houston is open somewhere, and once a minute otherwise (Coinbase as a backup for USD, EUR and GBP), so the app itself never contacts outside sites. When your electricity currency matches, the cost tile also shows the cost in sats.
-- **Network, market & news**: on or off. Houston fetches these from mempool.space, CoinGecko, alternative.me and Bitcoin Magazine (public data, no account), every 5 to 60 minutes.
-- **Electricity**: your price per kWh, for the cost tiles, or *Look up my utility's rates* (US, see [Mining economics](#mining-economics)).
-- **Alerts on your phone**: notifications on this device and/or the ntfy app, see below.
-- **Your Apollos**: add your other Apollos (or **Find on my network**) to see them all on Home; if they run Houston too, *Open Houston* jumps to theirs.
-- **Siri, Google & shortcuts**: a key for phone shortcuts and voice assistants, see [voice-assistants.md](voice-assistants.md).
+- **Advanced features**:
+  - **Mining economics**: time-of-use prices, heat, the autopilot and your pool, see [Mining economics](#mining-economics).
+  - **Connect a wallet**: use your Apollo's node with a wallet, see [Connect a wallet](#connect-a-wallet).
+  - **Your Apollos**: add your other Apollos (or **Find on my network**) to see them all on Home; if they run Houston too, *Open Houston* jumps to theirs.
+  - **Siri, Google & shortcuts**: a key for phone shortcuts and voice assistants, see [voice-assistants.md](voice-assistants.md).
+
+## Connect a wallet
+
+Settings › Advanced features › *Connect a wallet* shows what a desktop wallet like **Sparrow** needs to use your Apollo's own Bitcoin node instead of someone else's server: the address, port 8332, the user `futurebit` and the node's password (hidden until you tap *Show*). In Sparrow: Settings (Preferences on a Mac) › Server › **Bitcoin Core**, enter the address and port, choose User / Pass, and press Test Connection.
+
+The node only accepts wallets when the Apollo's **Allow LAN connections** is on; the switch on the card turns it on or off (the Apollo restarts its node to apply, as on the dashboard). Away from home, use the Apollo's Tailscale address. Wallets that need an Electrum server (Electrum, BlueWallet, the Blockstream app) can't connect directly, because the Apollo runs Bitcoin Core only. Keep the password private (it controls your node, not your coins) and never forward port 8332 on your router.
 
 ## Whisper mode
 
@@ -100,7 +108,7 @@ Stats › *Mining economics* works out what your Apollo really earns and costs, 
 - **The last 12 months**: what each mode and the autopilot would have earned, priced day by day with that day's real difficulty and bitcoin price.
 - **Outlook**: the difficulty trend and what the next 12 months look like next to a calculator that assumes difficulty stays flat.
 
-Settings › *Mining economics*:
+Settings › Advanced features › *Mining economics*:
 
 - **Time-of-use prices**: add a price for certain hours (weekdays, weekends or every day; 23:00 to 07:00 works). Other hours use your normal price.
 - **Heat**: if the Apollo sits in a room you heat, pick your heating (electric, heat pump, gas, propane or oil), its price and efficiency, the outdoor temperature below which you heat, and your ZIP code or town. Houston then counts the heat it makes at what your heating would have paid for it, whenever it's that cold outside.
@@ -116,7 +124,7 @@ Stats › *Monthly report* adds up each month as it goes: earned (in your curren
 
 ### Pool payouts
 
-Settings › Mining economics › *Pool* connects your pool, and Stats shows what it actually paid over the last 30 days next to what Houston expected from your hashrate, your unpaid balance, the last payout and the hashrate the pool sees:
+Settings › Advanced features › Mining economics › *Pool* connects your pool, and Stats shows what it actually paid over the last 30 days next to what Houston expected from your hashrate, your unpaid balance, the last payout and the hashrate the pool sees:
 
 - **OCEAN**: enter the bitcoin address you mine to. OCEAN's stats are public, so no account or key is needed. OCEAN pays per block the pool finds, so single days swing; 30 days evens it out.
 - **Braiins Pool**: make a **read-only** API token in your Braiins Pool account settings and paste it in. Houston keeps it on the Apollo and never shows it again. Braiins credits rewards per day in UTC, so its days can be a few hours off from yours.
@@ -124,6 +132,8 @@ Settings › Mining economics › *Pool* connects your pool, and Stats shows wha
 Houston checks the pool once an hour. Below 100% can be luck, stale or rejected shares, or a fee Houston doesn't know about (set your pool fee under Mining economics › More).
 
 ## Alerts on your phone
+
+> **Daily digest**: turn it on under Settings › Alerts and pick a time (8:00 AM by default). Each morning Houston sends yesterday's earnings (and sats), electricity, heat saved and net, the mining time and average hashrate, the bitcoin price, anything that needs a look, and the next scheduled change, over the same channels as your alerts.
 
 > **A block!** If your solo pool finds a block, every device with Houston open shows a full-screen celebration (once per device), on top of the alert. Settings › Alerts › *Preview the block-found celebration* shows what it looks like.
 
